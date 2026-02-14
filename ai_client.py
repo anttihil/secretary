@@ -4,9 +4,8 @@ import time
 import uuid
 from abc import ABC, abstractmethod
 
-import boto3
-import whisper
-from botocore.config import Config
+from faster_whisper import WhisperModel
+from llama_cpp import Llama
 
 
 class AIClient(ABC):
@@ -19,6 +18,10 @@ class AIClient(ABC):
         pass
 
     @abstractmethod
+    def clean_note(self, note: str) -> str:
+        pass
+
+    @abstractmethod
     def process_audio(self, audio_data: bytes, mode: str) -> str:
         pass
 
@@ -26,23 +29,45 @@ class AIClient(ABC):
 class LocalAIClient(AIClient):
     def __init__(
         self,
-        local_path: str,
-        model_id: str = "anthropic.claude-3-haiku-20240307-v1:0",
+        model_path: str,
+        whisper_model: str = "base.en",
     ):
-        self.whisper = whisper.load_model("small.en")
+        self.whisper = WhisperModel(whisper_model, device="cpu", compute_type="int8")
+        self.llm = Llama(model_path=model_path, n_ctx=2048)
 
     def convert_speech_to_text(self, audio_data: bytes) -> str:
-        with tempfile.NamedTemporaryFile(suffix=".wav") as temp_file:
-            temp_file.write(audio_data)
-            temp_file.flush()
-            result = self.whisper.transcribe(audio=temp_file.name)["text"]
-            if isinstance(result, str):
-                return result
-            else:
-                return "No transcription result"
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            f.write(audio_data)
+            f.flush()
+            segments, _ = self.whisper.transcribe(f.name)
+            return " ".join(segment.text.strip() for segment in segments)
 
     def text_prompt(self, prompt: str) -> str:
-        return prompt
+        # TODO(human): Call self.llm.create_chat_completion() with a messages
+        # list containing a single user message (role="user", content=prompt).
+        # The method returns a dict with the chat completion response.
+        # Extract the assistant's reply text from:
+        #   response["choices"][0]["message"]["content"]
+        # Return that text string.
+        raise NotImplementedError("Fill in text_prompt()")
+
+    def clean_note(self, note: str) -> str:
+        # TODO(human): Write a prompt string that asks the LLM to clean up
+        # a raw audio transcript — fix grammar, spelling, and missing words.
+        # Tell it to return only the cleaned text, nothing else.
+        # Then call self.text_prompt() with your prompt and return the result.
+        # Hint: use an f-string to embed `note` in your prompt.
+        raise NotImplementedError("Fill in clean_note()")
+
+    def process_audio(self, audio_data: bytes, mode: str) -> str:
+        # TODO(human): Use match/case to handle the mode parameter:
+        #   "note"    -> transcribe with convert_speech_to_text(), then clean
+        #               with clean_note(), return the cleaned text
+        #   "command" -> transcribe with convert_speech_to_text(), then pass
+        #               the text to text_prompt(), return the LLM response
+        #   _         -> raise ValueError(f"Unknown mode: {mode}")
+        # Look at AWSAIClient.process_audio() for a reference implementation.
+        raise NotImplementedError("Fill in process_audio()")
 
 
 class AWSAIClient(AIClient):
@@ -52,6 +77,9 @@ class AWSAIClient(AIClient):
         s3_bucket: str,
         model_id: str = "anthropic.claude-3-haiku-20240307-v1:0",
     ):
+        import boto3
+        from botocore.config import Config
+
         self.bedrock_runtime = boto3.client(
             service_name="bedrock-runtime",
             region_name="us-east-1",
@@ -124,7 +152,8 @@ class AWSAIClient(AIClient):
     def clean_note(self, note: str) -> str:
         cleaned_note = self.text_prompt(
             f"Clean this audio transcript for any grammatical errors, "
-            f"spelling mistakes, and missing words. Return only the cleaned text: {note}"
+            f"spelling mistakes, and missing words. "
+            f"Return only the cleaned text: {note}"
         )
         return cleaned_note
 
@@ -139,4 +168,3 @@ class AWSAIClient(AIClient):
                 return self.text_prompt(text)
             case _:
                 raise ValueError(f"Unknown mode: {mode}")
-        return ""

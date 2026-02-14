@@ -1,13 +1,25 @@
-import os
+import os  # noqa: F401
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-from ai_client import AWSAIClient
+from ai_client import AIClient, AWSAIClient, LocalAIClient  # noqa: F401
+
+
+def create_ai_client() -> AIClient:
+    # TODO(human): Read the AI_CLIENT env var (default to "local").
+    # Use match/case to return the right client:
+    #   "local" -> read LLM_MODEL_PATH (required) and WHISPER_MODEL
+    #              (default "base.en") from env vars, return LocalAIClient(...)
+    #   "aws"   -> read S3_BUCKET (required) from env var,
+    #              return AWSAIClient(local_path=".", s3_bucket=...)
+    #   _       -> raise ValueError with the unknown client type
+    # Hint: use os.environ[] for required vars (raises KeyError if missing)
+    # and os.environ.get("VAR", "default") for optional ones.
+    raise NotImplementedError("Fill in create_ai_client()")
+
 
 app = FastAPI()
-
-# Initialize AI client - requires S3_BUCKET environment variable
-ai_client = AWSAIClient(s3_bucket=os.environ.get("S3_BUCKET", "your-bucket-name"))
+ai_client = create_ai_client()
 
 
 @app.websocket("/ws")
