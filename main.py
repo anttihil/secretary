@@ -15,8 +15,17 @@ def create_ai_client() -> AIClient:
     #   _       -> raise ValueError with the unknown client type
     # Hint: use os.environ[] for required vars (raises KeyError if missing)
     # and os.environ.get("VAR", "default") for optional ones.
-    raise NotImplementedError("Fill in create_ai_client()")
-
+    client = os.environ.get("AI_CLIENT", "local")
+    match client:
+        case "local":
+            model_path = os.environ["LLM_MODEL_PATH"]
+            whisper_model = os.environ.get("WHISPER_MODEL", "base.en")
+            return LocalAIClient(model_path, whisper_model)
+        case "aws":
+            bucket = os.environ["S3_BUCKET"]
+            return AWSAIClient(local_path = ".", s3_bucket=bucket)
+        case _:
+            raise ValueError("Unknown client type")
 
 app = FastAPI()
 ai_client = create_ai_client()

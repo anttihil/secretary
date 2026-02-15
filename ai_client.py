@@ -49,7 +49,9 @@ class LocalAIClient(AIClient):
         # Extract the assistant's reply text from:
         #   response["choices"][0]["message"]["content"]
         # Return that text string.
-        raise NotImplementedError("Fill in text_prompt()")
+        
+        response = self.llm.create_chat_completion(messages=[{"role":"user", "content":prompt}])
+        return response["choices"][0]["message"]["content"]
 
     def clean_note(self, note: str) -> str:
         # TODO(human): Write a prompt string that asks the LLM to clean up
@@ -57,7 +59,8 @@ class LocalAIClient(AIClient):
         # Tell it to return only the cleaned text, nothing else.
         # Then call self.text_prompt() with your prompt and return the result.
         # Hint: use an f-string to embed `note` in your prompt.
-        raise NotImplementedError("Fill in clean_note()")
+        prompt = f'Clean up this raw audio transcript: fix grammar, spelling, and missing words: <transcript>{note}</transcript>'
+        return self.text_prompt(prompt)
 
     def process_audio(self, audio_data: bytes, mode: str) -> str:
         # TODO(human): Use match/case to handle the mode parameter:
@@ -67,8 +70,16 @@ class LocalAIClient(AIClient):
         #               the text to text_prompt(), return the LLM response
         #   _         -> raise ValueError(f"Unknown mode: {mode}")
         # Look at AWSAIClient.process_audio() for a reference implementation.
-        raise NotImplementedError("Fill in process_audio()")
-
+        match mode:
+            case "note":
+                note = self.convert_speech_to_text(audio_data)
+                cleaned_note = self.clean_note(note)
+                return cleaned_note
+            case "command":
+                text = self.convert_speech_to_text(audio_data)
+                return self.text_prompt(text)
+            case _:
+                raise ValueError(f"Unknown mode: {mode}")
 
 class AWSAIClient(AIClient):
     def __init__(
