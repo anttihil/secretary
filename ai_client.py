@@ -8,6 +8,23 @@ from faster_whisper import WhisperModel
 from llama_cpp import Llama
 
 
+def _detect_audio_format(audio_data: bytes) -> str:
+    """Detect audio format from magic bytes.
+
+    Returns file extension like '.webm' or '.wav'.
+    """
+    # TODO(human): Check the first few bytes of audio_data to detect the format.
+    # Magic bytes to look for:
+    #   - WebM/Matroska: starts with b'\x1a\x45\xdf\xa3'  (EBML header)
+    #   - WAV/RIFF:      starts with b'RIFF'
+    # Use audio_data[:4] to get the first 4 bytes, then compare with
+    # startswith() or == to determine the format.
+    # Return ".webm" for WebM, ".wav" for WAV.
+    # Raise ValueError("Unknown audio format") if neither matches.
+    # Hint: Python match/case works with bytes too!
+    pass
+
+
 class AIClient(ABC):
     @abstractmethod
     def convert_speech_to_text(self, audio_data: bytes) -> str:
@@ -36,7 +53,8 @@ class LocalAIClient(AIClient):
         self.llm = Llama(model_path=model_path, n_ctx=2048)
 
     def convert_speech_to_text(self, audio_data: bytes) -> str:
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        suffix = _detect_audio_format(audio_data)
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
             f.write(audio_data)
             f.flush()
             segments, _ = self.whisper.transcribe(f.name)
@@ -104,9 +122,11 @@ class AWSAIClient(AIClient):
 
     def convert_speech_to_text(self, audio_data: bytes) -> str:
         job_name = f"transcribe-{uuid.uuid4()}"
-        s3_key = f"audio/{job_name}.wav"
+        fmt = _detect_audio_format(audio_data)
+        ext = fmt.lstrip(".")
+        s3_key = f"audio/{job_name}{fmt}"
 
-        local_path = f"{self.local_path}/{job_name}.wav"
+        local_path = f"{self.local_path}/{job_name}{fmt}"
         with open(local_path, "wb") as f:
             f.write(audio_data)
 
@@ -118,7 +138,7 @@ class AWSAIClient(AIClient):
         self.transcribe.start_transcription_job(
             TranscriptionJobName=job_name,
             Media={"MediaFileUri": s3_uri},
-            MediaFormat="wav",
+            MediaFormat=ext,
             LanguageCode="en-US",
         )
 

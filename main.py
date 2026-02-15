@@ -1,6 +1,9 @@
 import os  # noqa: F401
+from pathlib import Path  # noqa: F401
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse  # noqa: F401
+from fastapi.staticfiles import StaticFiles  # noqa: F401
 
 from ai_client import AIClient, AWSAIClient, LocalAIClient  # noqa: F401
 
@@ -29,6 +32,13 @@ def create_ai_client() -> AIClient:
 
 app = FastAPI()
 ai_client = create_ai_client()
+
+# TODO(human): Serve the web frontend. Two things needed:
+# 1. Mount the "static" directory so files in it are served under /static.
+#    Use: app.mount("/static", StaticFiles(directory=...), name="static")
+#    Hint: use Path(__file__).parent / "static" to get the directory path.
+# 2. Add a GET route for "/" that returns static/index.html using FileResponse.
+#    Hint: use the @app.get() decorator, and return FileResponse(path_to_file).
 
 
 @app.websocket("/ws")
