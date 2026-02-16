@@ -17,6 +17,8 @@ Download a small GGUF model file, for example:
 - [Qwen2.5-3B-Instruct-GGUF](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF) (Q4_K_M recommended)
 - [Phi-4-mini-instruct-GGUF](https://huggingface.co/microsoft/Phi-4-mini-instruct-gguf)
 
+example:
+`curl -L https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf --create-dirs -o ./models/qwen2.5-3b-instruct-q4_k_m.gguf`
 Place it somewhere accessible, e.g. `./models/your-model.gguf`.
 
 ### 3. Configure environment

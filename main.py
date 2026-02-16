@@ -7,6 +7,12 @@ from fastapi.staticfiles import StaticFiles
 
 from ai_client import AIClient, LocalAIClient
 
+# Load .env file for local development; in production, systemd provides env vars
+if os.getenv("ENVIRONMENT") != "production":
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
 
 def create_ai_client() -> AIClient:
     # TODO(human): Read the AI_CLIENT env var (default to "local").
