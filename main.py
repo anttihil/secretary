@@ -1,11 +1,11 @@
-import os  # noqa: F401
-from pathlib import Path  # noqa: F401
+import os
+from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse  # noqa: F401
-from fastapi.staticfiles import StaticFiles  # noqa: F401
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
-from ai_client import AIClient, AWSAIClient, LocalAIClient  # noqa: F401
+from ai_client import AIClient, LocalAIClient
 
 
 def create_ai_client() -> AIClient:
@@ -24,11 +24,12 @@ def create_ai_client() -> AIClient:
             model_path = os.environ["LLM_MODEL_PATH"]
             whisper_model = os.environ.get("WHISPER_MODEL", "base.en")
             return LocalAIClient(model_path, whisper_model)
-        case "aws":
-            bucket = os.environ["S3_BUCKET"]
-            return AWSAIClient(local_path = ".", s3_bucket=bucket)
+        # case "aws":
+        #    bucket = os.environ["S3_BUCKET"]
+        #    return AWSAIClient(local_path=".", s3_bucket=bucket)
         case _:
             raise ValueError("Unknown client type")
+
 
 app = FastAPI()
 ai_client = create_ai_client()
@@ -39,6 +40,14 @@ ai_client = create_ai_client()
 #    Hint: use Path(__file__).parent / "static" to get the directory path.
 # 2. Add a GET route for "/" that returns static/index.html using FileResponse.
 #    Hint: use the @app.get() decorator, and return FileResponse(path_to_file).
+app.mount(
+    "/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static"
+)
+
+
+@app.get("/")
+async def root():
+    return FileResponse(Path(__file__).parent / "static" / "index.html")
 
 
 @app.websocket("/ws")
@@ -91,16 +100,3 @@ async def websocket_endpoint(websocket: WebSocket):
 
     except WebSocketDisconnect:
         pass
-
-
-@app.post("/note")
-def post_note():
-    return {"Hello": "World"}
-
-
-def main():
-    print("Hello from secretary!")
-
-
-if __name__ == "__main__":
-    main()
