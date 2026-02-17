@@ -19,22 +19,42 @@ function connectWebSocket() {
     try {
       parsed = JSON.parse(text);
     } catch {}
-    if (parsed && parsed.transcript && parsed.result) {
-      if (activeView === "note" && currentNote) {
-        // Append to note file, then refresh
-        await appendToNote(currentNote.filename, parsed.result);
-        await openNote(currentNote.filename);
-        addNoteResult(parsed.transcript, parsed.result);
-      } else {
-        addCommandResult(parsed.transcript, parsed.result);
+
+    if (parsed && parsed.status) {
+      switch (parsed.status) {
+        case "queued":
+          setStatus("Processing audio...", false);
+          // Re-enable recording so user can record again immediately
+          document.getElementById("noteBtnRecord").style.display = "";
+          document.getElementById("noteBtnStop").style.display = "none";
+          document.getElementById("cmdBtnRecord").style.display = "";
+          document.getElementById("cmdBtnStop").style.display = "none";
+          break;
+
+        case "complete":
+          if (parsed.mode === "note" && currentNote) {
+            await appendToNote(currentNote.filename, parsed.result);
+            await openNote(currentNote.filename);
+            addNoteResult(parsed.transcript, parsed.result);
+          } else {
+            addCommandResult(parsed.transcript, parsed.result);
+          }
+          setStatus("Ready");
+          currentMode = "";
+          break;
+
+        case "error":
+          setStatus("Error: " + parsed.message);
+          currentMode = "";
+          break;
       }
-      setStatus("Ready");
-      currentMode = "";
-    } else if (text === "Processing audio...") {
-      setStatus("Processing...", false);
-    } else if (text.startsWith("Recording started")) {
+    } else if (
+      typeof text === "string" &&
+      text.startsWith("Recording started")
+    ) {
       // Already handled in startRecording
-    } else {
+    } else if (typeof text === "string") {
+      // Legacy plain-text messages
       if (activeView === "command") {
         addCommandResult(null, text);
       }
@@ -263,12 +283,10 @@ function escapeHtml(text) {
 }
 
 // --- Modal keyboard handling ---
-document
-  .getElementById("newNoteTitle")
-  .addEventListener("keydown", (e) => {
-    if (e.key === "Enter") createNote();
-    if (e.key === "Escape") hideNewNoteModal();
-  });
+document.getElementById("newNoteTitle").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") createNote();
+  if (e.key === "Escape") hideNewNoteModal();
+});
 
 // --- Init ---
 connectWebSocket();

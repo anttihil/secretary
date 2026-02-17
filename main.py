@@ -1,7 +1,12 @@
+import asyncio
 import logging
 import os
 import re
 import subprocess
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -78,6 +83,10 @@ def git_sync():
         logger.error("Git sync unexpected error: %s", e)
 
 
+def schedule_git_sync():
+    asyncio.create_task(asyncio.to_thread(git_sync))
+
+
 def slugify(text: str) -> str:
     lowercase = text.lower()
     return re.sub(r"[^a-z0-9]+", "-", lowercase).strip("-")
@@ -122,8 +131,62 @@ def create_ai_client() -> AIClient:
             raise ValueError("Unknown client type")
 
 
-app = FastAPI()
+@dataclass
+class AudioJob:
+    job_id: str
+    audio_data: bytes
+    mode: str
+    websocket: WebSocket
+
+
+audio_queue: asyncio.Queue[AudioJob] = asyncio.Queue()
+audio_executor = ThreadPoolExecutor(max_workers=1)
+
 ai_client = create_ai_client()
+
+
+async def audio_worker():
+    """Long-lived worker that processes audio jobs from the queue."""
+    while True:
+        job = await audio_queue.get()
+        try:
+            loop = asyncio.get_event_loop()
+            job_result = await loop.run_in_executor(
+                audio_executor, ai_client.process_audio, job.audio_data, job.mode
+            )
+            await job.websocket.send_json(
+                {
+                    "status": "complete",
+                    "job_id": job.job_id,
+                    "mode": job.mode,
+                    "transcript": job_result["transcript"],
+                    "result": job_result["result"],
+                }
+            )
+        except Exception as e:
+            logger.error("Audio worker error (job %s): %s", job.job_id, e)
+            try:
+                await job.websocket.send_json(
+                    {"status": "error", "job_id": job.job_id, "message": str(e)}
+                )
+            except Exception:
+                pass
+        finally:
+            audio_queue.task_done()
+
+
+@asynccontextmanager
+async def lifespan(app):
+    worker_task = asyncio.create_task(audio_worker())
+    yield
+    worker_task.cancel()
+    try:
+        await worker_task
+    except asyncio.CancelledError:
+        pass
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.mount(
     "/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static"
@@ -183,7 +246,7 @@ async def create_note(req: CreateNoteRequest):
     path = NOTES_DIR / filename
 
     path.write_text(data=format_frontmatter(metadata, ""))
-    git_sync()
+    schedule_git_sync()
     return {"filename": filename, **metadata}
 
 
@@ -210,7 +273,7 @@ async def append_to_note(filename: str, req: AppendNoteRequest):
     timestamp = datetime.now(timezone.utc).strftime(FRONTMATTER_TIMESTAMP_FMT)
     metadata["updated"] = timestamp
     path.write_text(format_frontmatter(metadata, body))
-    git_sync()
+    schedule_git_sync()
     return {"filename": filename, "body": body, **metadata}
 
 
@@ -223,7 +286,7 @@ async def delete_note(filename: str):
     if path.resolve().parent != NOTES_DIR.resolve():
         raise HTTPException(status_code=400, detail="Invalid filename")
     path.unlink()
-    git_sync()
+    schedule_git_sync()
     return {"deleted": filename}
 
 
@@ -266,9 +329,17 @@ async def websocket_endpoint(websocket: WebSocket):
                             continue
                         recording = False
                         audio_data = b"".join(chunks)
-                        await websocket.send_text("Processing audio...")
-                        result = ai_client.process_audio(audio_data, mode)
-                        await websocket.send_json(result)
+                        job_id = str(uuid.uuid4())
+                        job = AudioJob(
+                            job_id=job_id,
+                            audio_data=audio_data,
+                            mode=mode,
+                            websocket=websocket,
+                        )
+                        await audio_queue.put(job)
+                        await websocket.send_json(
+                            {"status": "queued", "job_id": job_id}
+                        )
                         chunks = []
                         mode = ""
                     case _:
