@@ -1,222 +1,109 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Secretary</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: #f0f2f5;
-            display: flex;
-            justify-content: center;
-            padding: 2rem;
-            min-height: 100vh;
-        }
-        .card {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
-            padding: 2rem;
-            width: 100%;
-            max-width: 600px;
-            height: fit-content;
-        }
-        h1 { text-align: center; margin-bottom: 1.5rem; color: #1a1a2e; }
-        .controls {
-            display: flex;
-            gap: 1rem;
-            justify-content: center;
-            margin-bottom: 1.5rem;
-        }
-        button {
-            padding: 0.75rem 2rem;
-            border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            cursor: pointer;
-            font-weight: 600;
-            transition: opacity 0.2s;
-        }
-        button:hover { opacity: 0.85; }
-        button:disabled { opacity: 0.4; cursor: not-allowed; }
-        .btn-note { background: #4361ee; color: white; }
-        .btn-command { background: #7209b7; color: white; }
-        .btn-stop { background: #e63946; color: white; }
-        .status {
-            text-align: center;
-            margin-bottom: 1.5rem;
-            font-size: 0.95rem;
-            color: #555;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-        }
-        .recording-dot {
-            width: 10px;
-            height: 10px;
-            background: #e63946;
-            border-radius: 50%;
-            display: none;
-            animation: pulse 1s ease-in-out infinite;
-        }
-        .recording-dot.active { display: inline-block; }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
-        .results {
-            border-top: 1px solid #eee;
-            padding-top: 1rem;
-            max-height: 60vh;
-            overflow-y: auto;
-        }
-        .result-item {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 0.75rem;
-        }
-        .result-item .timestamp {
-            font-size: 0.75rem;
-            color: #888;
-            margin-bottom: 0.25rem;
-        }
-        .result-item .mode-tag {
-            display: inline-block;
-            font-size: 0.7rem;
-            font-weight: 600;
-            padding: 0.15rem 0.5rem;
-            border-radius: 4px;
-            margin-left: 0.5rem;
-            color: white;
-        }
-        .mode-tag.note { background: #4361ee; }
-        .mode-tag.command { background: #7209b7; }
-        .result-item .text { white-space: pre-wrap; line-height: 1.5; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <h1>Secretary</h1>
-        <div class="controls">
-            <button class="btn-note" id="btnNote" onclick="startRecording('note')">Note</button>
-            <button class="btn-command" id="btnCommand" onclick="startRecording('command')">Command</button>
-            <button class="btn-stop" id="btnStop" onclick="stopRecording()" style="display:none">Stop</button>
-        </div>
-        <div class="status">
-            <span class="recording-dot" id="recDot"></span>
-            <span id="statusText">Connecting...</span>
-        </div>
-        <div class="results" id="results"></div>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <h2>Notes</h2>
+        <button class="btn-new-note" onclick="showNewNoteModal()">+ New</button>
+      </div>
+      <div class="notes-list" id="notesList"></div>
+      <div class="sidebar-footer">
+        <button class="btn-command-mode" onclick="showCommandView()">
+          Command Mode
+        </button>
+      </div>
     </div>
 
-    <script>
-        let ws;
-        let mediaRecorder;
-        let currentMode = "";
+    <!-- Main panel -->
+    <div class="main-panel">
+      <!-- Command view -->
+      <div class="command-view" id="commandView">
+        <h1>Secretary</h1>
+        <div class="controls">
+          <button
+            class="btn-command"
+            id="cmdBtnRecord"
+            onclick="startRecording('command')"
+          >
+            Record Command
+          </button>
+          <button
+            class="btn-stop"
+            id="cmdBtnStop"
+            onclick="stopRecording()"
+            style="display: none"
+          >
+            Stop
+          </button>
+        </div>
+        <div class="status">
+          <span class="recording-dot" id="cmdRecDot"></span>
+          <span id="cmdStatusText">Connecting...</span>
+        </div>
+        <div class="results" id="cmdResults"></div>
+      </div>
 
-        const btnNote = document.getElementById("btnNote");
-        const btnCommand = document.getElementById("btnCommand");
-        const btnStop = document.getElementById("btnStop");
-        const statusText = document.getElementById("statusText");
-        const recDot = document.getElementById("recDot");
-        const results = document.getElementById("results");
+      <!-- Note view -->
+      <div class="note-view view-hidden" id="noteView">
+        <div class="note-header">
+          <button class="btn-back" onclick="closeNote()">&larr;</button>
+          <h1 id="noteTitle"></h1>
+          <button class="btn-delete" onclick="deleteCurrentNote()">
+            Delete
+          </button>
+        </div>
+        <div class="note-controls">
+          <button
+            class="btn-record"
+            id="noteBtnRecord"
+            onclick="startRecording('note')"
+          >
+            Record
+          </button>
+          <button
+            class="btn-stop"
+            id="noteBtnStop"
+            onclick="stopRecording()"
+            style="display: none"
+          >
+            Stop
+          </button>
+        </div>
+        <div class="status">
+          <span class="recording-dot" id="noteRecDot"></span>
+          <span id="noteStatusText"></span>
+        </div>
+        <div class="note-body" id="noteBody"></div>
+        <div class="results" id="noteResults" style="margin-top: 1rem"></div>
+      </div>
+    </div>
 
-        function connectWebSocket() {
-            const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-            ws = new WebSocket(`${protocol}//${location.host}/ws`);
+    <!-- New note modal -->
+    <div class="modal-overlay" id="newNoteModal">
+      <div class="modal">
+        <h2>New Note</h2>
+        <input
+          type="text"
+          id="newNoteTitle"
+          placeholder="Note title..."
+          autofocus
+        />
+        <div class="modal-buttons">
+          <button class="btn-cancel" onclick="hideNewNoteModal()">
+            Cancel
+          </button>
+          <button class="btn-create" onclick="createNote()">Create</button>
+        </div>
+      </div>
+    </div>
 
-            ws.onopen = () => setStatus("Ready");
-            ws.onclose = () => {
-                setStatus("Disconnected. Reconnecting...");
-                setTimeout(connectWebSocket, 2000);
-            };
-            ws.onmessage = (event) => {
-                const text = event.data;
-                if (text === "Processing audio...") {
-                    setStatus("Processing...", false);
-                } else if (text.startsWith("Recording started")) {
-                    // Already handled in startRecording
-                } else {
-                    addResult(text, currentMode);
-                    setStatus("Ready");
-                    currentMode = "";
-                }
-            };
-        }
-
-        function setStatus(text, recording) {
-            statusText.textContent = text;
-            if (recording === true) {
-                recDot.classList.add("active");
-            } else {
-                recDot.classList.remove("active");
-            }
-        }
-
-        async function startRecording(mode) {
-            if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                currentMode = mode;
-                ws.send(mode);
-
-                mediaRecorder = new MediaRecorder(stream, {
-                    mimeType: "audio/webm;codecs=opus"
-                });
-                mediaRecorder.ondataavailable = (e) => {
-                    if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-                        ws.send(e.data);
-                    }
-                };
-                mediaRecorder.onstop = () => {
-                    stream.getTracks().forEach(t => t.stop());
-                };
-                mediaRecorder.start(250);
-
-                btnNote.style.display = "none";
-                btnCommand.style.display = "none";
-                btnStop.style.display = "";
-                setStatus("Recording...", true);
-            } catch (err) {
-                setStatus("Microphone access denied");
-                console.error("Microphone error:", err);
-            }
-        }
-
-        function stopRecording() {
-            if (mediaRecorder && mediaRecorder.state !== "inactive") {
-                mediaRecorder.stop();
-            }
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send("stop");
-            }
-            btnNote.style.display = "";
-            btnCommand.style.display = "";
-            btnStop.style.display = "none";
-            setStatus("Processing...", false);
-        }
-
-        function addResult(text, mode) {
-            const item = document.createElement("div");
-            item.className = "result-item";
-            const now = new Date().toLocaleTimeString();
-            const tag = mode ? `<span class="mode-tag ${mode}">${mode}</span>` : "";
-            item.innerHTML = `<div class="timestamp">${now}${tag}</div><div class="text">${escapeHtml(text)}</div>`;
-            results.prepend(item);
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement("div");
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        connectWebSocket();
-    </script>
-</body>
+    <script src="/static/app.js"></script>
+  </body>
 </html>
