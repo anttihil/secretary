@@ -156,7 +156,6 @@ async function createNote() {
   const note = await resp.json();
   hideNewNoteModal();
   titleInput.value = "";
-  await fetchNotes();
   await openNote(note.filename);
 }
 
