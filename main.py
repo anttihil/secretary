@@ -1,9 +1,14 @@
+import logging
 import os
+import re
+import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from ai_client import AIClient, LocalAIClient
 
@@ -13,17 +18,97 @@ if os.getenv("ENVIRONMENT") != "production":
 
     load_dotenv()
 
+NOTES_DIR = Path(os.environ.get("NOTES_DIR", Path(__file__).parent / "notes"))
+FRONTMATTER_TIMESTAMP_FMT = "%Y-%m-%dT%H:%M:%S"
+FILE_TIMESTAMP_FMT = "%Y%m%d-%H%M%S"
+
+logger = logging.getLogger(__name__)
+
+
+def ensure_notes_dir():
+    NOTES_DIR.mkdir(exist_ok=True)
+
+
+def is_git_repo(path: Path) -> bool:
+    """Check if path is inside a git repository."""
+    current = path.resolve()
+    while current != current.parent:
+        if (current / ".git").exists():
+            return True
+        current = current.parent
+    return False
+
+
+def git_sync():
+    """Commit and push any changes in NOTES_DIR if it's a git repo.
+
+    Best-effort: errors are logged but never raised. Notes are already
+    saved to the filesystem before this runs.
+    """
+    if not is_git_repo(NOTES_DIR):
+        return
+
+    try:
+        subprocess.run(
+            ["git", "add", "-A"], cwd=NOTES_DIR, check=True, capture_output=True
+        )
+
+        try:
+            msg = f"Update notes {
+                datetime.now(timezone.utc).strftime(FRONTMATTER_TIMESTAMP_FMT)
+            }"
+            subprocess.run(
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    msg,
+                ],
+                cwd=NOTES_DIR,
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError:
+            pass
+        subprocess.run(["git", "push"], cwd=NOTES_DIR, check=True, capture_output=True)
+
+    except subprocess.CalledProcessError as e:
+        logger.error("Git sync failed: %s (stderr: %s)", e, e.stderr)
+    except Exception as e:
+        logger.error("Git sync unexpected error: %s", e)
+
+
+def slugify(text: str) -> str:
+    lowercase = text.lower()
+    return re.sub(r"[^a-z0-9]+", "-", lowercase).strip("-")
+
+
+def parse_frontmatter(content: str) -> tuple[dict[str, str], str]:
+    no_frontmatter = ({}, content)
+    if not content.startswith("---\n"):
+        return no_frontmatter
+    second = content.find("---", 3)
+    if second == -1:
+        return no_frontmatter
+    frontmatter = content[3:second]
+    keys = {
+        k: v
+        for k, v in (
+            line.split(": ", 1) for line in frontmatter.strip().splitlines() if line
+        )
+    }
+    return (keys, content[second + 3 :].lstrip())
+
+
+def format_frontmatter(metadata: dict[str, str], body: str) -> str:
+    front = "---\n"
+    for key, value in metadata.items():
+        front += f"{key}: {value}\n"
+    front += "---\n"
+    return front + "\n" + body
+
 
 def create_ai_client() -> AIClient:
-    # TODO(human): Read the AI_CLIENT env var (default to "local").
-    # Use match/case to return the right client:
-    #   "local" -> read LLM_MODEL_PATH (required) and WHISPER_MODEL
-    #              (default "base.en") from env vars, return LocalAIClient(...)
-    #   "aws"   -> read S3_BUCKET (required) from env var,
-    #              return AWSAIClient(local_path=".", s3_bucket=...)
-    #   _       -> raise ValueError with the unknown client type
-    # Hint: use os.environ[] for required vars (raises KeyError if missing)
-    # and os.environ.get("VAR", "default") for optional ones.
     client = os.environ.get("AI_CLIENT", "local")
     match client:
         case "local":
@@ -40,12 +125,6 @@ def create_ai_client() -> AIClient:
 app = FastAPI()
 ai_client = create_ai_client()
 
-# TODO(human): Serve the web frontend. Two things needed:
-# 1. Mount the "static" directory so files in it are served under /static.
-#    Use: app.mount("/static", StaticFiles(directory=...), name="static")
-#    Hint: use Path(__file__).parent / "static" to get the directory path.
-# 2. Add a GET route for "/" that returns static/index.html using FileResponse.
-#    Hint: use the @app.get() decorator, and return FileResponse(path_to_file).
 app.mount(
     "/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static"
 )
@@ -54,6 +133,101 @@ app.mount(
 @app.get("/")
 async def root():
     return FileResponse(Path(__file__).parent / "static" / "index.html")
+
+
+# --- Notes REST API ---
+
+
+class CreateNoteRequest(BaseModel):
+    title: str
+
+
+class AppendNoteRequest(BaseModel):
+    text: str
+
+
+@app.get("/api/notes")
+async def list_notes():
+    try:
+        ensure_notes_dir()
+    except OSError:
+        raise HTTPException(500, "No notes directory configured")
+    note_files = NOTES_DIR.glob("*.md")
+
+    note_data = [
+        {"filename": path.name, **parse_frontmatter(path.read_text())[0]}
+        for path in note_files
+    ]
+
+    return sorted(note_data, key=lambda n: n["updated"], reverse=True)
+
+
+@app.post("/api/notes")
+async def create_note(req: CreateNoteRequest):
+    try:
+        ensure_notes_dir()
+    except OSError:
+        raise HTTPException(500, "No notes directory configured.")
+    timestamp = datetime.now(timezone.utc)
+    frontmatter_timestamp = timestamp.strftime(FRONTMATTER_TIMESTAMP_FMT)
+    file_timestamp = timestamp.strftime(FILE_TIMESTAMP_FMT)
+
+    filename = f"{slugify(req.title)}-{file_timestamp}.md"
+
+    metadata = {
+        "title": req.title,
+        "created": frontmatter_timestamp,
+        "updated": frontmatter_timestamp,
+    }
+
+    path = NOTES_DIR / filename
+
+    path.write_text(data=format_frontmatter(metadata, ""))
+    git_sync()
+    return {"filename": filename, **metadata}
+
+
+@app.get("/api/notes/{filename}")
+async def get_note(filename: str):
+    path = NOTES_DIR / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Note not found")
+    text = path.read_text()
+    metadata, body = parse_frontmatter(text)
+    return {"filename": filename, "body": body, **metadata}
+
+
+@app.post("/api/notes/{filename}/append")
+async def append_to_note(filename: str, req: AppendNoteRequest):
+    path = NOTES_DIR / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Note not found")
+    metadata, body = parse_frontmatter(path.read_text())
+    if body and not body.endswith("\n\n"):
+        body = body + "\n\n"
+    body = body + req.text + "\n\n"
+
+    timestamp = datetime.now(timezone.utc).strftime(FRONTMATTER_TIMESTAMP_FMT)
+    metadata["updated"] = timestamp
+    path.write_text(format_frontmatter(metadata, body))
+    git_sync()
+    return {"filename": filename, "body": body, **metadata}
+
+
+@app.delete("/api/notes/{filename}")
+async def delete_note(filename: str):
+    path = NOTES_DIR / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Note not found")
+    # Prevent path traversal
+    if path.resolve().parent != NOTES_DIR.resolve():
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path.unlink()
+    git_sync()
+    return {"deleted": filename}
+
+
+# --- WebSocket ---
 
 
 @app.websocket("/ws")
@@ -94,7 +268,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         audio_data = b"".join(chunks)
                         await websocket.send_text("Processing audio...")
                         result = ai_client.process_audio(audio_data, mode)
-                        await websocket.send_text(result)
+                        await websocket.send_json(result)
                         chunks = []
                         mode = ""
                     case _:
