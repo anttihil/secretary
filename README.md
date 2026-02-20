@@ -48,6 +48,10 @@ Set `AI_CLIENT=aws` and `S3_BUCKET=your-bucket` in your `.env` file.
 
 ## Usage
 
+Open `http://localhost:8000` in your browser to use the web UI.
+
+### WebSocket API
+
 Connect via WebSocket to `/ws` and send text commands:
 
 - `note` - Start recording in note mode (transcribe + clean up)

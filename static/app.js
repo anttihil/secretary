@@ -1,16 +1,162 @@
+// --- Module-level variables ---
+
 let ws;
 let mediaRecorder;
-let currentMode = "";
-let currentNote = null; // { filename, title, body, ... }
-let activeView = "command"; // "command" or "note"
+let currentNote = null;
+let notes = [];
+let commandResults = [];
+let noteResults = [];
+
+// --- Template helper ---
+
+function cloneTemplate(id) {
+  const tmpl = document.getElementById(id);
+  return tmpl.content.firstElementChild.cloneNode(true);
+}
+
+// --- DOM update helpers ---
+
+function renderNotesList() {
+  const notesList = document.getElementById("notesList");
+  if (!notesList) return;
+  notesList.innerHTML = "";
+  if (notes.length === 0) {
+    const emptyNotice = document.createElement("div");
+    emptyNotice.classList.add("no-notes");
+    emptyNotice.textContent = "No notes yet";
+    notesList.appendChild(emptyNotice);
+  } else {
+    notes.forEach((note) => {
+      const noteItem = cloneTemplate("tmpl-note-item");
+      noteItem.querySelector(".note-item-title").textContent = note.title;
+      noteItem.querySelector(".note-item-date").textContent = note.updated;
+      if (note.filename === currentNote?.filename)
+        noteItem.classList.add("active");
+      noteItem.onclick = () => openNote(note.filename);
+      notesList.appendChild(noteItem);
+    });
+  }
+}
+
+function renderResults(containerId, results) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = "";
+  results.forEach(({ transcript, result, mode, time }) => {
+    const el = cloneTemplate("tmpl-result-item");
+    el.querySelector(".result-time").textContent = time;
+    const tag = el.querySelector(".mode-tag");
+    tag.textContent = mode;
+    tag.className = "mode-tag " + mode;
+
+    if (transcript) {
+      el.querySelector(".transcript-text").textContent = transcript;
+      const label = mode === "command" ? "Response" : "Cleaned";
+      el.querySelector(".result-label").textContent = label;
+      el.querySelector(".result-text").textContent = result;
+    } else {
+      el.querySelector(".transcript").remove();
+      el.querySelector(".result-label").textContent = "";
+      el.querySelector(".result-text").textContent = result;
+    }
+    container.appendChild(el);
+  });
+}
+
+function setStatus(text, recording) {
+  const noteView = document.querySelector("#noteView");
+  const isCommandView = noteView.classList.contains("view-hidden");
+
+  const statusElement = document.querySelector(
+    isCommandView ? "#cmdStatusText" : "#noteStatusText",
+  );
+  statusElement.textContent = text;
+
+  const recordingEl = document.querySelector(
+    isCommandView ? "#cmdRecDot" : "#noteRecDot",
+  );
+  if (recording) {
+    recordingEl.classList.add("active");
+  } else {
+    recordingEl.classList.remove("active");
+  }
+}
+
+function showNoteView(note) {
+  currentNote = note;
+  document.getElementById("commandView").classList.add("view-hidden");
+  const noteView = document.getElementById("noteView");
+  noteView.classList.remove("view-hidden");
+
+  document.getElementById("noteTitle").textContent = note.title;
+  updateNoteBody(note.body);
+  noteResults = [];
+  renderResults("noteResults", noteResults);
+  setStatus("Ready", false);
+  renderNotesList();
+}
+
+function showCommandView() {
+  currentNote = null;
+  noteResults = [];
+  document.getElementById("noteView").classList.add("view-hidden");
+  document.getElementById("commandView").classList.remove("view-hidden");
+  setStatus("Ready", false);
+  renderNotesList();
+}
+
+function updateNoteBody(body) {
+  const bodyEl = document.getElementById("noteBody");
+  if (body && body.trim()) {
+    bodyEl.textContent = body;
+    bodyEl.classList.remove("note-body-empty");
+  } else {
+    bodyEl.textContent = "No content yet. Record audio to add notes.";
+    bodyEl.classList.add("note-body-empty");
+  }
+}
+
+function setRecordingButtons(mode, recording) {
+  const noteRecord = document.getElementById("noteBtnRecord");
+  const noteStop = document.getElementById("noteBtnStop");
+  const cmdRecord = document.getElementById("cmdBtnRecord");
+  const cmdStop = document.getElementById("cmdBtnStop");
+
+  if (recording && mode === "note") {
+    noteRecord.style.display = "none";
+    noteStop.style.display = "";
+  } else {
+    noteRecord.style.display = "";
+    noteStop.style.display = "none";
+  }
+
+  if (recording && mode === "command") {
+    cmdRecord.style.display = "none";
+    cmdStop.style.display = "";
+  } else {
+    cmdRecord.style.display = "";
+    cmdStop.style.display = "none";
+  }
+}
+
+function showNewNoteModal() {
+  document.getElementById("newNoteModal").classList.add("active");
+  document.getElementById("newNoteTitle").focus();
+}
+
+function hideNewNoteModal() {
+  document.getElementById("newNoteModal").classList.remove("active");
+  document.getElementById("newNoteTitle").value = "";
+}
+
+// --- WebSocket ---
 
 function connectWebSocket() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   ws = new WebSocket(`${protocol}//${location.host}/ws`);
 
-  ws.onopen = () => setStatus("Ready");
+  ws.onopen = () => setStatus("Ready", false);
   ws.onclose = () => {
-    setStatus("Disconnected. Reconnecting...");
+    setStatus("Disconnected. Reconnecting...", false);
     setTimeout(connectWebSocket, 2000);
   };
   ws.onmessage = async (event) => {
@@ -24,28 +170,23 @@ function connectWebSocket() {
       switch (parsed.status) {
         case "queued":
           setStatus("Processing audio...", false);
-          // Re-enable recording so user can record again immediately
-          document.getElementById("noteBtnRecord").style.display = "";
-          document.getElementById("noteBtnStop").style.display = "none";
-          document.getElementById("cmdBtnRecord").style.display = "";
-          document.getElementById("cmdBtnStop").style.display = "none";
+          setRecordingButtons("", false);
           break;
 
         case "complete":
           if (parsed.mode === "note" && currentNote) {
             await appendToNote(currentNote.filename, parsed.result);
-            await openNote(currentNote.filename);
             addNoteResult(parsed.transcript, parsed.result);
           } else {
             addCommandResult(parsed.transcript, parsed.result);
           }
-          setStatus("Ready");
-          currentMode = "";
+          setStatus("Ready", false);
+          setRecordingButtons("", false);
           break;
 
         case "error":
-          setStatus("Error: " + parsed.message);
-          currentMode = "";
+          setStatus("Error: " + parsed.message, false);
+          setRecordingButtons("", false);
           break;
       }
     } else if (
@@ -54,41 +195,20 @@ function connectWebSocket() {
     ) {
       // Already handled in startRecording
     } else if (typeof text === "string") {
-      // Legacy plain-text messages
-      if (activeView === "command") {
-        addCommandResult(null, text);
-      }
-      setStatus("Ready");
-      currentMode = "";
+      addCommandResult(null, text);
+      setStatus("Ready", false);
+      setRecordingButtons("", false);
     }
   };
 }
 
-function setStatus(text, recording) {
-  const statusEl =
-    activeView === "note"
-      ? document.getElementById("noteStatusText")
-      : document.getElementById("cmdStatusText");
-  const dotEl =
-    activeView === "note"
-      ? document.getElementById("noteRecDot")
-      : document.getElementById("cmdRecDot");
-  statusEl.textContent = text;
-  if (recording === true) {
-    dotEl.classList.add("active");
-  } else {
-    dotEl.classList.remove("active");
-  }
-}
+// --- Recording ---
 
 async function startRecording(mode) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-    });
-    currentMode = mode;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     ws.send(mode);
 
     mediaRecorder = new MediaRecorder(stream, {
@@ -104,16 +224,10 @@ async function startRecording(mode) {
     };
     mediaRecorder.start(250);
 
-    if (mode === "note") {
-      document.getElementById("noteBtnRecord").style.display = "none";
-      document.getElementById("noteBtnStop").style.display = "";
-    } else {
-      document.getElementById("cmdBtnRecord").style.display = "none";
-      document.getElementById("cmdBtnStop").style.display = "";
-    }
     setStatus("Recording...", true);
+    setRecordingButtons(mode, true);
   } catch (err) {
-    setStatus("Microphone access denied");
+    setStatus("Microphone access denied", false);
     console.error("Microphone error:", err);
   }
 }
@@ -125,11 +239,6 @@ function stopRecording() {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send("stop");
   }
-  // Reset buttons for both views
-  document.getElementById("noteBtnRecord").style.display = "";
-  document.getElementById("noteBtnStop").style.display = "none";
-  document.getElementById("cmdBtnRecord").style.display = "";
-  document.getElementById("cmdBtnStop").style.display = "none";
   setStatus("Processing...", false);
 }
 
@@ -138,28 +247,8 @@ function stopRecording() {
 async function fetchNotes() {
   const resp = await fetch("/api/notes");
   if (!resp.ok) return;
-  const notes = await resp.json();
-  renderNotesList(notes);
-}
-
-function renderNotesList(notes) {
-  const container = document.getElementById("notesList");
-  container.innerHTML = "";
-  if (!notes || notes.length === 0) {
-    container.innerHTML =
-      '<div style="padding:1rem;color:#aaa;text-align:center">No notes yet</div>';
-    return;
-  }
-  notes.forEach(({ filename, title, updated }) => {
-    const div = document.createElement("div");
-    div.classList.add("note-item");
-    if (filename === currentNote?.filename) {
-      div.classList.add("active");
-    }
-    div.innerHTML = `<div class=note-item-title>${escapeHtml(title)}</div><div class=note-item-date>${escapeHtml(updated)}</div>`;
-    div.onclick = () => openNote(filename);
-    container.append(div);
-  });
+  notes = await resp.json();
+  renderNotesList();
 }
 
 async function createNote() {
@@ -174,115 +263,98 @@ async function createNote() {
   });
   if (!resp.ok) return;
   const note = await resp.json();
-  hideNewNoteModal();
   titleInput.value = "";
-  await openNote(note.filename);
+
+  hideNewNoteModal();
+  const newNote = { ...note, body: "" };
+  notes.unshift(newNote);
+  showNoteView(newNote);
 }
 
 async function openNote(filename) {
   const resp = await fetch(`/api/notes/${filename}`);
   if (!resp.ok) return;
-  currentNote = await resp.json();
-  document.getElementById("noteTitle").textContent = currentNote.title;
-  const bodyEl = document.getElementById("noteBody");
-  if (currentNote.body && currentNote.body.trim()) {
-    bodyEl.textContent = currentNote.body;
-    bodyEl.classList.remove("note-body-empty");
-  } else {
-    bodyEl.textContent = "No content yet. Record audio to add notes.";
-    bodyEl.classList.add("note-body-empty");
-  }
-  document.getElementById("noteResults").innerHTML = "";
-  showNoteView();
-  // Refresh sidebar to highlight active note
-  await fetchNotes();
-}
-
-function closeNote() {
-  currentNote = null;
-  showCommandView();
-  fetchNotes();
+  const note = await resp.json();
+  showNoteView(note);
 }
 
 async function deleteCurrentNote() {
   if (!currentNote) return;
   if (!confirm(`Delete "${currentNote.title}"?`)) return;
-  await fetch(`/api/notes/${currentNote.filename}`, { method: "DELETE" });
-  currentNote = null;
+
+  const filename = currentNote.filename;
+  const resp = await fetch(`/api/notes/${filename}`, { method: "DELETE" });
+  if (!resp.ok) return;
+
+  notes = notes.filter((n) => n.filename !== filename);
   showCommandView();
-  await fetchNotes();
 }
 
 async function appendToNote(filename, text) {
-  await fetch(`/api/notes/${filename}/append`, {
+  const resp = await fetch(`/api/notes/${filename}/append`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
   });
+  if (!resp.ok) return;
+
+  const updated = await resp.json();
+  notes = notes.map((n) =>
+    n.filename === filename ? { ...n, updated: updated.updated } : n,
+  );
+  currentNote = updated;
+  updateNoteBody(updated.body);
+  renderNotesList();
 }
 
-// --- Views ---
-
-function showCommandView() {
-  activeView = "command";
-  document.getElementById("commandView").classList.remove("view-hidden");
-  document.getElementById("noteView").classList.add("view-hidden");
-}
-
-function showNoteView() {
-  activeView = "note";
-  document.getElementById("noteView").classList.remove("view-hidden");
-  document.getElementById("commandView").classList.add("view-hidden");
-  document.getElementById("noteStatusText").textContent = "";
-  document.getElementById("noteRecDot").classList.remove("active");
-}
-
-function showNewNoteModal() {
-  document.getElementById("newNoteModal").classList.add("active");
-  document.getElementById("newNoteTitle").focus();
-}
-
-function hideNewNoteModal() {
-  document.getElementById("newNoteModal").classList.remove("active");
-  document.getElementById("newNoteTitle").value = "";
-}
-
-// --- Result rendering ---
+// --- Result helpers ---
 
 function addCommandResult(transcript, result) {
-  const container = document.getElementById("cmdResults");
-  container.prepend(createResultItem(transcript, result, "command"));
+  const time = new Date().toLocaleTimeString();
+  commandResults = [
+    { transcript, result, mode: "command", time },
+    ...commandResults,
+  ];
+  renderResults("cmdResults", commandResults);
 }
 
 function addNoteResult(transcript, result) {
-  const container = document.getElementById("noteResults");
-  container.prepend(createResultItem(transcript, result, "note"));
+  const time = new Date().toLocaleTimeString();
+  noteResults = [{ transcript, result, mode: "note", time }, ...noteResults];
+  renderResults("noteResults", noteResults);
 }
 
-function createResultItem(transcript, result, mode) {
-  const item = document.createElement("div");
-  item.className = "result-item";
-  const now = new Date().toLocaleTimeString();
-  const tag = mode ? `<span class="mode-tag ${mode}">${mode}</span>` : "";
-  const resultLabel = mode === "command" ? "Response" : "Cleaned";
-  let html = `<div class="timestamp">${now}${tag}</div>`;
-  if (transcript) {
-    html += `<div class="transcript"><span class="transcript-label">Transcript</span><br>${escapeHtml(transcript)}</div>`;
-    html += `<div class="text"><span class="transcript-label">${resultLabel}</span><br>${escapeHtml(result)}</div>`;
-  } else {
-    html += `<div class="text">${escapeHtml(result)}</div>`;
-  }
-  item.innerHTML = html;
-  return item;
-}
+// --- Event listeners ---
 
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
-}
+document
+  .getElementById("btnNewNote")
+  .addEventListener("click", showNewNoteModal);
 
-// --- Modal keyboard handling ---
+document
+  .getElementById("btnCommandMode")
+  .addEventListener("click", showCommandView);
+
+document.getElementById("btnBack").addEventListener("click", showCommandView);
+document
+  .getElementById("btnDelete")
+  .addEventListener("click", deleteCurrentNote);
+
+document
+  .getElementById("cmdBtnRecord")
+  .addEventListener("click", () => startRecording("command"));
+document.getElementById("cmdBtnStop").addEventListener("click", stopRecording);
+
+document
+  .getElementById("noteBtnRecord")
+  .addEventListener("click", () => startRecording("note"));
+document.getElementById("noteBtnStop").addEventListener("click", stopRecording);
+
+document
+  .getElementById("btnModalCancel")
+  .addEventListener("click", hideNewNoteModal);
+
+document.getElementById("btnModalCreate").addEventListener("click", createNote);
+
 document.getElementById("newNoteTitle").addEventListener("keydown", (e) => {
   if (e.key === "Enter") createNote();
   if (e.key === "Escape") hideNewNoteModal();

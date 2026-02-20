@@ -11,11 +11,11 @@
     <div class="sidebar">
       <div class="sidebar-header">
         <h2>Notes</h2>
-        <button class="btn-new-note" onclick="showNewNoteModal()">+ New</button>
+        <button class="btn-new-note" id="btnNewNote">+ New</button>
       </div>
       <div class="notes-list" id="notesList"></div>
       <div class="sidebar-footer">
-        <button class="btn-command-mode" onclick="showCommandView()">
+        <button class="btn-command-mode" id="btnCommandMode">
           Command Mode
         </button>
       </div>
@@ -27,19 +27,8 @@
       <div class="command-view" id="commandView">
         <h1>Secretary</h1>
         <div class="controls">
-          <button
-            class="btn-command"
-            id="cmdBtnRecord"
-            onclick="startRecording('command')"
-          >
-            Record Command
-          </button>
-          <button
-            class="btn-stop"
-            id="cmdBtnStop"
-            onclick="stopRecording()"
-            style="display: none"
-          >
+          <button class="btn-command" id="cmdBtnRecord">Record Command</button>
+          <button class="btn-stop" id="cmdBtnStop" style="display: none">
             Stop
           </button>
         </div>
@@ -53,26 +42,13 @@
       <!-- Note view -->
       <div class="note-view view-hidden" id="noteView">
         <div class="note-header">
-          <button class="btn-back" onclick="closeNote()">&larr;</button>
+          <button class="btn-back" id="btnBack">&larr;</button>
           <h1 id="noteTitle"></h1>
-          <button class="btn-delete" onclick="deleteCurrentNote()">
-            Delete
-          </button>
+          <button class="btn-delete" id="btnDelete">Delete</button>
         </div>
         <div class="note-controls">
-          <button
-            class="btn-record"
-            id="noteBtnRecord"
-            onclick="startRecording('note')"
-          >
-            Record
-          </button>
-          <button
-            class="btn-stop"
-            id="noteBtnStop"
-            onclick="stopRecording()"
-            style="display: none"
-          >
+          <button class="btn-record" id="noteBtnRecord">Record</button>
+          <button class="btn-stop" id="noteBtnStop" style="display: none">
             Stop
           </button>
         </div>
@@ -96,13 +72,36 @@
           autofocus
         />
         <div class="modal-buttons">
-          <button class="btn-cancel" onclick="hideNewNoteModal()">
-            Cancel
-          </button>
-          <button class="btn-create" onclick="createNote()">Create</button>
+          <button class="btn-cancel" id="btnModalCancel">Cancel</button>
+          <button class="btn-create" id="btnModalCreate">Create</button>
         </div>
       </div>
     </div>
+
+    <!-- Templates -->
+    <template id="tmpl-note-item">
+      <div class="note-item">
+        <div class="note-item-title"></div>
+        <div class="note-item-date"></div>
+      </div>
+    </template>
+
+    <template id="tmpl-result-item">
+      <div class="result-item">
+        <div class="timestamp">
+          <span class="result-time"></span>
+          <span class="mode-tag"></span>
+        </div>
+        <div class="transcript">
+          <span class="transcript-label">Transcript</span><br />
+          <span class="transcript-text"></span>
+        </div>
+        <div class="text">
+          <span class="transcript-label result-label"></span><br />
+          <span class="result-text"></span>
+        </div>
+      </div>
+    </template>
 
     <script src="/static/app.js"></script>
   </body>
