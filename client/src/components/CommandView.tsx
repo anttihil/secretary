@@ -15,6 +15,7 @@ interface CommandViewProps {
 const CommandView: Component<CommandViewProps> = (props) => (
   <div class="command-view">
     <h1>Secretary</h1>
+    <p class="letterhead-subtitle">Voice-Powered Correspondence System</p>
     <div class="controls">
       <Show
         when={!props.isRecording}

@@ -27,15 +27,20 @@ const NewNoteModal: Component<NewNoteModalProps> = ({ onClose, onCreate }) => {
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div class="modal">
-        <h2>New Note</h2>
-        <input
-          type="text"
-          placeholder="Note title..."
-          value={title()}
-          onInput={(e) => setTitle(e.currentTarget.value)}
-          onKeyDown={handleKeyDown}
-          autofocus
-        />
+        <div class="modal-header">Memorandum</div>
+        <div class="modal-body">
+          <div class="modal-field-row">
+            <span class="modal-field-label">RE:</span>
+            <input
+              type="text"
+              placeholder="Note title..."
+              value={title()}
+              onInput={(e) => setTitle(e.currentTarget.value)}
+              onKeyDown={handleKeyDown}
+              autofocus
+            />
+          </div>
+        </div>
         <div class="modal-buttons">
           <button class="btn-cancel" onClick={onClose}>
             Cancel
