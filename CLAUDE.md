@@ -21,15 +21,6 @@ Secretary is a voice-powered AI assistant that accepts audio via WebSocket, tran
   - `AWSAIClient` - Uses AWS Transcribe for speech-to-text, S3 for audio storage, and Bedrock (Claude) for LLM prompts. Requires `S3_BUCKET` env var.
   - `LocalAIClient` - Uses OpenAI Whisper locally for speech-to-text. No LLM integration yet (stubs only).
 
-## Learning Mode
-
-The human owner of this repo is learning Python. When implementing new features, leave the most interesting or educational parts as `# TODO(human): ...` comments with a clear description of what needs to be done and why. Focus on leaving TODOs for things like:
-- Core logic and algorithms (not boilerplate)
-- Python-specific patterns worth learning (list comprehensions, context managers, decorators, etc.)
-- Error handling strategies
-- Data transformation steps
-
-Implement the surrounding scaffolding, imports, function signatures, types, and boring glue code yourself. The goal is to let the human fill in the parts that teach the most, while Claude handles the tedious setup.
 
 ## Tech Stack
 
