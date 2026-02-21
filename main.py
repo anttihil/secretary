@@ -54,7 +54,7 @@ def git_sync():
 
     try:
         subprocess.run(
-            ["git", "add", "-A"], cwd=NOTES_DIR, check=True, capture_output=True
+            ["git", "add", "--", "."], cwd=NOTES_DIR, check=True, capture_output=True
         )
 
         try:
