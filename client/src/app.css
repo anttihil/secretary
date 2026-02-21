@@ -7,9 +7,11 @@ body {
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: #f0f2f5;
+  overflow: hidden;
+}
+#root {
   display: flex;
   height: 100vh;
-  overflow: hidden;
 }
 
 /* Sidebar */
@@ -49,6 +51,12 @@ body {
   flex: 1;
   overflow-y: auto;
   padding: 0.5rem;
+}
+.no-notes {
+  padding: 1rem 0.75rem;
+  color: #aaa;
+  font-size: 0.9rem;
+  font-style: italic;
 }
 .note-item {
   padding: 0.75rem;
@@ -107,9 +115,6 @@ body {
   flex-direction: column;
   padding: 2rem;
   overflow-y: auto;
-}
-.view-hidden {
-  display: none !important;
 }
 
 .command-view h1 {
@@ -288,7 +293,7 @@ button:disabled {
 
 /* Modal */
 .modal-overlay {
-  display: none;
+  display: flex;
   position: fixed;
   top: 0;
   left: 0;
@@ -298,9 +303,6 @@ button:disabled {
   z-index: 100;
   align-items: center;
   justify-content: center;
-}
-.modal-overlay.active {
-  display: flex;
 }
 .modal {
   background: white;

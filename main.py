@@ -11,7 +11,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -188,15 +187,6 @@ async def lifespan(app):
 
 app = FastAPI(lifespan=lifespan)
 
-app.mount(
-    "/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static"
-)
-
-
-@app.get("/")
-async def root():
-    return FileResponse(Path(__file__).parent / "static" / "index.html")
-
 
 # --- Notes REST API ---
 
@@ -351,3 +341,10 @@ async def websocket_endpoint(websocket: WebSocket):
 
     except WebSocketDisconnect:
         pass
+
+
+app.mount(
+    "/",
+    StaticFiles(directory=Path(__file__).parent / "static", html=True),
+    name="static",
+)
