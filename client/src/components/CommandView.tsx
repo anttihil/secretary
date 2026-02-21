@@ -12,31 +12,25 @@ interface CommandViewProps {
   onStop: () => void;
 }
 
-const CommandView: Component<CommandViewProps> = ({
-  results,
-  status,
-  isRecording,
-  onRecord,
-  onStop,
-}) => (
+const CommandView: Component<CommandViewProps> = (props) => (
   <div class="command-view">
     <h1>Secretary</h1>
     <div class="controls">
       <Show
-        when={!isRecording}
+        when={!props.isRecording}
         fallback={
-          <button class="btn-stop" onClick={onStop}>
+          <button class="btn-stop" onClick={props.onStop}>
             Stop
           </button>
         }
       >
-        <button class="btn-command" onClick={onRecord}>
+        <button class="btn-command" onClick={props.onRecord}>
           Record Command
         </button>
       </Show>
     </div>
-    <StatusBar status={status} isRecording={isRecording} />
-    <ResultList results={results} />
+    <StatusBar status={props.status} isRecording={props.isRecording} />
+    <ResultList results={props.results} />
   </div>
 );
 

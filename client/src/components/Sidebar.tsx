@@ -10,29 +10,23 @@ interface SidebarProps {
   onCommandMode: () => void;
 }
 
-const Sidebar: Component<SidebarProps> = ({
-  notes,
-  currentNote,
-  onOpenNote,
-  onNewNote,
-  onCommandMode,
-}) => (
+const Sidebar: Component<SidebarProps> = (props) => (
   <div class="sidebar">
     <div class="sidebar-header">
       <h2>Notes</h2>
-      <button class="btn-new-note" onClick={onNewNote}>
+      <button class="btn-new-note" onClick={props.onNewNote}>
         + New
       </button>
     </div>
     <div class="notes-list">
-      <Show when={notes.length === 0}>
+      <Show when={props.notes.length === 0}>
         <div class="no-notes">No notes yet</div>
       </Show>
-      <For each={notes}>
+      <For each={props.notes}>
         {(note) => (
           <div
-            class={`note-item${note.filename === currentNote?.filename ? " active" : ""}`}
-            onClick={() => onOpenNote(note.filename)}
+            class={`note-item${note.filename === props.currentNote?.filename ? " active" : ""}`}
+            onClick={() => props.onOpenNote(note.filename)}
           >
             <div class="note-item-title">{note.title}</div>
             <div class="note-item-date">{note.updated}</div>
@@ -41,7 +35,7 @@ const Sidebar: Component<SidebarProps> = ({
       </For>
     </div>
     <div class="sidebar-footer">
-      <button class="btn-command-mode" onClick={onCommandMode}>
+      <button class="btn-command-mode" onClick={props.onCommandMode}>
         Command Mode
       </button>
     </div>

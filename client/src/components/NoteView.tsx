@@ -15,48 +15,39 @@ interface NoteViewProps {
   onDelete: () => void;
 }
 
-const NoteView: Component<NoteViewProps> = ({
-  note,
-  results,
-  status,
-  isRecording,
-  onRecord,
-  onStop,
-  onBack,
-  onDelete,
-}) => (
+const NoteView: Component<NoteViewProps> = (props) => (
   <div class="note-view">
     <div class="note-header">
-      <button class="btn-back" onClick={onBack}>
+      <button class="btn-back" onClick={props.onBack}>
         ←
       </button>
-      <h1>{note?.title}</h1>
-      <button class="btn-delete" onClick={onDelete}>
+      <h1>{props.note?.title}</h1>
+      <button class="btn-delete" onClick={props.onDelete}>
         Delete
       </button>
     </div>
     <div class="note-controls">
       <Show
-        when={!isRecording}
+        when={!props.isRecording}
         fallback={
-          <button class="btn-stop" onClick={onStop}>
+          <button class="btn-stop" onClick={props.onStop}>
             Stop
           </button>
         }
       >
-        <button class="btn-record" onClick={onRecord}>
+        <button class="btn-record" onClick={props.onRecord}>
           Record
         </button>
       </Show>
     </div>
-    <StatusBar status={status} isRecording={isRecording} />
-    <div class={`note-body${!note?.body?.trim() ? " note-body-empty" : ""}`}>
-      {note?.body?.trim()
-        ? note.body
+    <StatusBar status={props.status} isRecording={props.isRecording} />
+    <div class={`note-body${!props.note?.body?.trim() ? " note-body-empty" : ""}`}>
+      {props.note?.body?.trim()
+        ? props.note.body
         : "No content yet. Record audio to add notes."}
     </div>
     <div style="margin-top: 1rem">
-      <ResultList results={results} />
+      <ResultList results={props.results} />
     </div>
   </div>
 );

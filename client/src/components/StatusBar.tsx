@@ -5,10 +5,10 @@ interface StatusBarProps {
   isRecording: boolean;
 }
 
-const StatusBar: Component<StatusBarProps> = ({ status, isRecording }) => (
+const StatusBar: Component<StatusBarProps> = (props) => (
   <div class="status">
-    <span class={`recording-dot${isRecording ? " active" : ""}`} />
-    <span>{status}</span>
+    <span class={`recording-dot${props.isRecording ? " active" : ""}`} />
+    <span>{props.status}</span>
   </div>
 );
 

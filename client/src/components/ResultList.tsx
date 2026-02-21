@@ -6,9 +6,9 @@ interface ResultListProps {
   results: Result[];
 }
 
-const ResultList: Component<ResultListProps> = ({ results }) => (
+const ResultList: Component<ResultListProps> = (props) => (
   <div class="results">
-    <For each={results}>
+    <For each={props.results}>
       {(item) => (
         <div class="result-item">
           <div class="timestamp">
