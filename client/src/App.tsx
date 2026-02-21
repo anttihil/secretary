@@ -21,6 +21,7 @@ export default function App() {
   const [status, setStatus] = createSignal("Connecting...");
   const [isRecording, setIsRecording] = createSignal(false);
   const [showModal, setShowModal] = createSignal(false);
+  const [sidebarOpen, setSidebarOpen] = createSignal(false);
 
   let ws: WebSocket | undefined;
   let mediaRecorder: MediaRecorder | undefined;
@@ -199,11 +200,18 @@ export default function App() {
       <Sidebar
         notes={notes()}
         currentNote={currentNote()}
-        onOpenNote={handleOpenNote}
-        onNewNote={() => setShowModal(true)}
-        onCommandMode={showCommandView}
+        onOpenNote={(f) => { handleOpenNote(f); setSidebarOpen(false); }}
+        onNewNote={() => { setShowModal(true); setSidebarOpen(false); }}
+        onCommandMode={() => { showCommandView(); setSidebarOpen(false); }}
+        open={sidebarOpen()}
       />
+      <Show when={sidebarOpen()}>
+        <div class="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
+      </Show>
       <div class="main-panel">
+        <div class="mobile-topbar">
+          <button class="btn-menu" onClick={() => setSidebarOpen(true)}>≡</button>
+        </div>
         <Show when={view() === "command"}>
           <CommandView
             results={commandResults()}

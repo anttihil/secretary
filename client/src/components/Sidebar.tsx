@@ -8,10 +8,11 @@ interface SidebarProps {
   onOpenNote: (filename: string) => void;
   onNewNote: () => void;
   onCommandMode: () => void;
+  open?: boolean;
 }
 
 const Sidebar: Component<SidebarProps> = (props) => (
-  <div class="sidebar">
+  <div class={`sidebar${props.open ? " open" : ""}`}>
     <div class="sidebar-header">
       <h2>Notes</h2>
       <button class="btn-new-note" onClick={props.onNewNote}>

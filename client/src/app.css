@@ -526,3 +526,82 @@ button:disabled {
   padding: 0.75rem 1.5rem 1.25rem;
   border-top: 1px solid var(--border-light);
 }
+
+/* ── Mobile topbar (hamburger) — hidden on desktop ── */
+.mobile-topbar {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* Sidebar: slide-in drawer */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+  }
+  .sidebar.open {
+    transform: translateX(0);
+    box-shadow: 4px 0 20px rgba(26,18,9,0.25);
+  }
+
+  /* Dim overlay behind open sidebar */
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(26,18,9,0.4);
+    z-index: 199;
+  }
+
+  /* Mobile top bar */
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    padding: 0.4rem 0.75rem;
+    border-bottom: 1px solid var(--border-manila);
+    flex-shrink: 0;
+  }
+
+  /* Reduce padding on views */
+  .command-view,
+  .note-view {
+    padding: 1rem;
+  }
+
+  /* Scale down letterhead title */
+  .command-view h1 {
+    font-size: 1.5rem;
+  }
+  .letterhead-subtitle {
+    margin-bottom: 1rem;
+  }
+
+  /* Note header: compact */
+  .note-header {
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  /* Note body: adjust red-line to match reduced padding */
+  .note-body {
+    background-image:
+      linear-gradient(90deg,
+        transparent 1.5rem,
+        rgba(139,26,26,0.35) 1.5rem, rgba(139,26,26,0.35) calc(1.5rem + 1px),
+        transparent calc(1.5rem + 1px)
+      ),
+      repeating-linear-gradient(0deg,
+        transparent, transparent 27px,
+        rgba(100,120,160,0.12) 27px, rgba(100,120,160,0.12) 28px
+      );
+    padding: 1rem 1rem 1rem 2rem;
+  }
+
+  /* Touch-friendly tap targets */
+  button {
+    min-height: 44px;
+  }
+}
