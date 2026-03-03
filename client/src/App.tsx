@@ -115,7 +115,11 @@ export default function App() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      ws.send(mode);
+      if (mode === "note" && currentNote()) {
+        ws.send(`note:${currentNote()!.filename}`);
+      } else {
+        ws.send(mode);
+      }
       mediaRecorder = new MediaRecorder(stream, {
         mimeType: "audio/webm;codecs=opus",
       });

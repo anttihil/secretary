@@ -136,6 +136,7 @@ class AudioJob:
     audio_data: bytes
     mode: str
     websocket: WebSocket
+    note_filename: str | None = None
 
 
 audio_queue: asyncio.Queue[AudioJob] = asyncio.Queue()
@@ -149,9 +150,19 @@ async def audio_worker():
     while True:
         job = await audio_queue.get()
         try:
+            note_context = ""
+            if job.note_filename and job.mode == "note":
+                note_path = NOTES_DIR / job.note_filename
+                if note_path.exists():
+                    _, note_context = parse_frontmatter(note_path.read_text())
+
             loop = asyncio.get_event_loop()
             job_result = await loop.run_in_executor(
-                audio_executor, ai_client.process_audio, job.audio_data, job.mode
+                audio_executor,
+                ai_client.process_audio,
+                job.audio_data,
+                job.mode,
+                note_context,
             )
             await job.websocket.send_json(
                 {
@@ -290,6 +301,7 @@ async def websocket_endpoint(websocket: WebSocket):
     recording: bool = False
     chunks: list[bytes] = []
     mode: str = ""
+    note_filename: str | None = None
 
     try:
         while True:
@@ -300,11 +312,20 @@ async def websocket_endpoint(websocket: WebSocket):
                     case "close":
                         await websocket.close()
                         break
+                    case data if data.startswith("note:"):
+                        if recording:
+                            continue
+                        recording = True
+                        mode = "note"
+                        note_filename = data[5:] or None
+                        chunks = []
+                        await websocket.send_text("Recording started (note mode)")
                     case "note":
                         if recording:
                             continue
                         recording = True
                         mode = "note"
+                        note_filename = None
                         chunks = []
                         await websocket.send_text("Recording started (note mode)")
                     case "command":
@@ -325,6 +346,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             audio_data=audio_data,
                             mode=mode,
                             websocket=websocket,
+                            note_filename=note_filename,
                         )
                         await audio_queue.put(job)
                         await websocket.send_json(
