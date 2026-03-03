@@ -377,6 +377,25 @@ button:disabled {
   color: var(--ink-placeholder);
 }
 
+/* ── Transcript words — clickable for glossary ── */
+.transcript-word {
+  cursor: pointer;
+  border-bottom: 1px dotted transparent;
+  transition: border-color 0.15s, background 0.15s;
+}
+.transcript-word:hover {
+  border-bottom-color: var(--ink-faded);
+}
+.transcript-word.added {
+  background: rgba(44, 74, 124, 0.15);
+  border-bottom-color: var(--ink-blue);
+  animation: glossary-flash 1.5s ease-out;
+}
+@keyframes glossary-flash {
+  0%   { background: rgba(44, 74, 124, 0.35); }
+  100% { background: transparent; }
+}
+
 /* ── Note view ── */
 .note-header {
   display: flex;
@@ -488,6 +507,12 @@ button:disabled {
   flex-shrink: 0;
 }
 
+.modal-field-value {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  color: var(--ink-primary);
+}
+
 .modal input {
   flex: 1;
   width: 100%;
@@ -510,6 +535,120 @@ button:disabled {
   justify-content: flex-end;
   padding: 0.75rem 1.5rem 1.25rem;
   border-top: 1px solid var(--border-light);
+}
+
+/* ── Clean up button ── */
+.btn-clean {
+  border-color: var(--ink-secondary);
+  color: var(--ink-secondary);
+  box-shadow: 2px 2px 0 rgba(74,63,48,0.3);
+  font-size: 0.85rem;
+  padding: 0.5rem 1rem;
+}
+.btn-clean:hover {
+  box-shadow: 1px 1px 0 rgba(74,63,48,0.3);
+}
+
+/* ── Cleanup modal ── */
+.cleanup-modal {
+  width: 640px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.cleanup-body {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.cleanup-hint {
+  font-size: 0.8rem;
+  color: var(--ink-faded);
+  font-style: italic;
+  margin-bottom: 0.75rem;
+}
+
+.cleanup-diff {
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+
+/* ── Diff tokens ── */
+.diff-token {
+  cursor: pointer;
+  padding: 1px 3px;
+  border-radius: 2px;
+}
+
+.diff-pair {
+  display: inline;
+}
+
+.diff-arrow {
+  color: var(--ink-faded);
+  font-size: 0.85em;
+}
+
+.diff-delete {
+  background: rgba(139,26,26,0.12);
+  color: var(--ink-red);
+  text-decoration: line-through;
+}
+.diff-delete:hover {
+  background: rgba(139,26,26,0.22);
+}
+
+.diff-insert {
+  background: rgba(44,74,124,0.12);
+  color: var(--ink-blue);
+  text-decoration: underline;
+}
+.diff-insert:hover {
+  background: rgba(44,74,124,0.22);
+}
+
+.diff-resolved {
+  transition: background 0.15s;
+}
+.diff-kept-old {
+  background: rgba(139,26,26,0.08);
+  color: var(--ink-primary);
+  text-decoration: none;
+}
+.diff-kept-old:hover {
+  background: rgba(139,26,26,0.16);
+}
+.diff-kept-new {
+  background: rgba(44,74,124,0.08);
+  color: var(--ink-primary);
+  text-decoration: none;
+}
+.diff-kept-new:hover {
+  background: rgba(44,74,124,0.16);
+}
+
+/* ── Context menu ── */
+.context-menu {
+  position: fixed;
+  z-index: 300;
+  background: var(--paper-card);
+  border: 1.5px solid var(--border-manila);
+  box-shadow: 3px 3px 0 rgba(26,18,9,0.15);
+}
+.context-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  border: none;
+  box-shadow: none;
+}
+.context-menu button:hover {
+  background: rgba(180,160,120,0.15);
+  box-shadow: none;
+  transform: none;
 }
 
 /* ── Mobile topbar (hamburger) — hidden on desktop ── */

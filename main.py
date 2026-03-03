@@ -23,6 +23,7 @@ if os.getenv("ENVIRONMENT") != "production":
     load_dotenv()
 
 NOTES_DIR = Path(os.environ.get("NOTES_DIR", Path(__file__).parent / "notes"))
+GLOSSARY_PATH = NOTES_DIR / "glossary.txt"
 FRONTMATTER_TIMESTAMP_FMT = "%Y-%m-%dT%H:%M:%S"
 FILE_TIMESTAMP_FMT = "%Y%m%d-%H%M%S"
 
@@ -122,7 +123,7 @@ def create_ai_client() -> AIClient:
         case "local":
             model_path = os.environ["LLM_MODEL_PATH"]
             whisper_model = os.environ.get("WHISPER_MODEL", "base.en")
-            return LocalAIClient(model_path, whisper_model)
+            return LocalAIClient(model_path, whisper_model, GLOSSARY_PATH)
         # case "aws":
         #    bucket = os.environ["S3_BUCKET"]
         #    return AWSAIClient(local_path=".", s3_bucket=bucket)
@@ -210,6 +211,15 @@ class AppendNoteRequest(BaseModel):
     text: str
 
 
+class ReplaceNoteBodyRequest(BaseModel):
+    body: str
+
+
+class AddGlossaryWordRequest(BaseModel):
+    transcript_word: str
+    correct_word: str
+
+
 @app.get("/api/notes")
 async def list_notes():
     try:
@@ -278,6 +288,35 @@ async def append_to_note(filename: str, req: AppendNoteRequest):
     return {"filename": filename, "body": body, **metadata}
 
 
+@app.post("/api/notes/{filename}/clean")
+async def clean_note(filename: str):
+    path = NOTES_DIR / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Note not found")
+    _, body = parse_frontmatter(path.read_text())
+    if not body.strip():
+        raise HTTPException(status_code=400, detail="Note is empty")
+    loop = asyncio.get_event_loop()
+    cleaned = await loop.run_in_executor(
+        audio_executor, ai_client.clean_note, body
+    )
+    return {"cleaned": cleaned}
+
+
+@app.post("/api/notes/{filename}/replace")
+async def replace_note_body(filename: str, req: ReplaceNoteBodyRequest):
+    path = NOTES_DIR / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Note not found")
+    metadata, _ = parse_frontmatter(path.read_text())
+    timestamp = datetime.now(timezone.utc).strftime(FRONTMATTER_TIMESTAMP_FMT)
+    metadata["updated"] = timestamp
+    body = req.body if req.body.endswith("\n\n") else req.body + "\n\n"
+    path.write_text(format_frontmatter(metadata, body))
+    schedule_git_sync()
+    return {"filename": filename, "body": body, **metadata}
+
+
 @app.delete("/api/notes/{filename}")
 async def delete_note(filename: str):
     path = NOTES_DIR / filename
@@ -289,6 +328,43 @@ async def delete_note(filename: str):
     path.unlink()
     schedule_git_sync()
     return {"deleted": filename}
+
+
+# --- Glossary API ---
+
+@app.get("/api/glossary")
+async def get_glossary():
+    path = GLOSSARY_PATH
+    if not path.exists():
+        return []
+    entries = []
+    for line in path.read_text().strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if " → " in line:
+            transcript, correct = line.split(" → ", 1)
+            entries.append({"transcript": transcript, "correct": correct})
+        else:
+            entries.append({"transcript": line, "correct": line})
+    return entries
+
+
+@app.post("/api/glossary")
+async def add_glossary_word(req: AddGlossaryWordRequest):
+    ensure_notes_dir()
+    path = GLOSSARY_PATH
+    transcript = req.transcript_word.strip()
+    correct = req.correct_word.strip()
+    if not transcript or not correct:
+        raise HTTPException(400, "Both words are required")
+    existing = path.read_text() if path.exists() else ""
+    if not existing.endswith("\n") and existing:
+        existing += "\n"
+    existing += f"{transcript} → {correct}\n"
+    path.write_text(existing)
+    ai_client.reload_glossary()
+    return {"transcript": transcript, "correct": correct}
 
 
 # --- WebSocket ---

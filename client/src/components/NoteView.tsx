@@ -9,10 +9,12 @@ interface NoteViewProps {
   results: Result[];
   status: string;
   isRecording: boolean;
+  isCleaning: boolean;
   onRecord: () => void;
   onStop: () => void;
   onBack: () => void;
   onDelete: () => void;
+  onClean: () => void;
 }
 
 const NoteView: Component<NoteViewProps> = (props) => (
@@ -39,6 +41,13 @@ const NoteView: Component<NoteViewProps> = (props) => (
           Record
         </button>
       </Show>
+      <button
+        class="btn-clean"
+        onClick={props.onClean}
+        disabled={props.isRecording || props.isCleaning || !props.note?.body?.trim()}
+      >
+        {props.isCleaning ? "Cleaning..." : "Clean up"}
+      </button>
     </div>
     <StatusBar status={props.status} isRecording={props.isRecording} />
     <div class={`note-body${!props.note?.body?.trim() ? " note-body-empty" : ""}`}>

@@ -3,12 +3,15 @@ import type { Note, NoteListItem, Result, WsMessage } from "./types";
 import Sidebar from "./components/Sidebar";
 import NoteView from "./components/NoteView";
 import NewNoteModal from "./components/NewNoteModal";
+import CleanupModal from "./components/CleanupModal";
 import {
   fetchNotes,
   createNote,
   getNote,
   deleteNote,
   appendToNote,
+  cleanNote,
+  replaceNoteBody,
 } from "./api";
 
 export default function App() {
@@ -19,6 +22,9 @@ export default function App() {
   const [isRecording, setIsRecording] = createSignal(false);
   const [showModal, setShowModal] = createSignal(false);
   const [sidebarOpen, setSidebarOpen] = createSignal(false);
+  const [isCleaning, setIsCleaning] = createSignal(false);
+  const [showCleanupModal, setShowCleanupModal] = createSignal(false);
+  const [cleanedText, setCleanedText] = createSignal("");
 
   let ws: WebSocket | undefined;
   let mediaRecorder: MediaRecorder | undefined;
@@ -62,7 +68,7 @@ export default function App() {
               setCurrentNote(updated);
               setNoteResults([
                 {
-                  transcript: parsed.transcript ?? null,
+                  transcript: null,
                   result: parsed.result ?? "",
                   time: new Date().toLocaleTimeString(),
                 },
@@ -154,6 +160,41 @@ export default function App() {
     setNoteResults([]);
   }
 
+  async function handleCleanNote(): Promise<void> {
+    const note = currentNote();
+    if (!note) return;
+    setIsCleaning(true);
+    try {
+      const { cleaned } = await cleanNote(note.filename);
+      setCleanedText(cleaned);
+      setShowCleanupModal(true);
+    } catch (e) {
+      console.error("Cleanup failed:", e);
+      setStatus("Cleanup failed");
+    } finally {
+      setIsCleaning(false);
+    }
+  }
+
+  async function applyCleanup(finalText: string): Promise<void> {
+    const note = currentNote();
+    if (!note) return;
+    try {
+      const updated = await replaceNoteBody(note.filename, finalText);
+      setCurrentNote(updated);
+      setNotes(
+        notes().map((n) =>
+          n.filename === updated.filename
+            ? { ...n, updated: updated.updated }
+            : n,
+        ),
+      );
+      setShowCleanupModal(false);
+    } catch (e) {
+      console.error("Failed to apply cleanup:", e);
+    }
+  }
+
   onMount(() => {
     connectWebSocket();
     loadNotes();
@@ -194,10 +235,12 @@ export default function App() {
             results={noteResults()}
             status={status()}
             isRecording={isRecording()}
+            isCleaning={isCleaning()}
             onRecord={() => startRecording()}
             onStop={stopRecording}
             onBack={handleBack}
             onDelete={handleDeleteNote}
+            onClean={handleCleanNote}
           />
         </Show>
       </div>
@@ -205,6 +248,14 @@ export default function App() {
         <NewNoteModal
           onClose={() => setShowModal(false)}
           onCreate={handleCreateNote}
+        />
+      </Show>
+      <Show when={showCleanupModal()}>
+        <CleanupModal
+          original={currentNote()?.body ?? ""}
+          cleaned={cleanedText()}
+          onApply={applyCleanup}
+          onClose={() => setShowCleanupModal(false)}
         />
       </Show>
     </>

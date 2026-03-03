@@ -28,6 +28,43 @@ export async function deleteNote(filename: string): Promise<{ deleted: string }>
   return resp.json();
 }
 
+export async function addToGlossary(
+  transcriptWord: string,
+  correctWord: string,
+): Promise<{ transcript: string; correct: string }> {
+  const resp = await fetch("/api/glossary", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      transcript_word: transcriptWord,
+      correct_word: correctWord,
+    }),
+  });
+  if (!resp.ok) throw new Error("Failed to add to glossary");
+  return resp.json();
+}
+
+export async function cleanNote(
+  filename: string,
+): Promise<{ cleaned: string }> {
+  const resp = await fetch(`/api/notes/${filename}/clean`, { method: "POST" });
+  if (!resp.ok) throw new Error("Failed to clean note");
+  return resp.json();
+}
+
+export async function replaceNoteBody(
+  filename: string,
+  body: string,
+): Promise<Note> {
+  const resp = await fetch(`/api/notes/${filename}/replace`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ body }),
+  });
+  if (!resp.ok) throw new Error("Failed to replace note body");
+  return resp.json();
+}
+
 export async function appendToNote(filename: string, text: string): Promise<Note> {
   const resp = await fetch(`/api/notes/${filename}/append`, {
     method: "POST",

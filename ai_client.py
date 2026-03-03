@@ -1,4 +1,3 @@
-import os
 import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -39,11 +38,7 @@ class AIClient(ABC):
         pass
 
 
-def _load_glossary() -> str:
-    glossary_path = os.environ.get("GLOSSARY_PATH")
-    if not glossary_path:
-        return ""
-    path = Path(glossary_path)
+def _load_glossary(path: Path) -> str:
     if not path.exists():
         return ""
     return path.read_text().strip()
@@ -54,10 +49,15 @@ class LocalAIClient(AIClient):
         self,
         model_path: str,
         whisper_model: str = "base.en",
+        glossary_path: Path | None = None,
     ):
         self.whisper = WhisperModel(whisper_model, device="cpu", compute_type="int8")
         self.llm = Llama(model_path=model_path, n_ctx=2048)
-        self.glossary = _load_glossary()
+        self.glossary_path = glossary_path or Path("glossary.txt")
+        self.glossary = _load_glossary(self.glossary_path)
+
+    def reload_glossary(self):
+        self.glossary = _load_glossary(self.glossary_path)
 
     def convert_speech_to_text(self, audio_data: bytes) -> str:
         suffix = _detect_audio_format(audio_data)
@@ -103,7 +103,6 @@ class LocalAIClient(AIClient):
         match mode:
             case "note":
                 transcript = self.convert_speech_to_text(audio_data)
-                result = self.clean_note(transcript, context=note_context)
-                return {"transcript": transcript, "result": result}
+                return {"transcript": transcript, "result": transcript}
             case _:
                 raise ValueError(f"Unknown mode: {mode}")
