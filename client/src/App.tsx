@@ -1,7 +1,6 @@
 import { createSignal, onMount, onCleanup, Show } from "solid-js";
 import type { Note, NoteListItem, Result, WsMessage } from "./types";
 import Sidebar from "./components/Sidebar";
-import CommandView from "./components/CommandView";
 import NoteView from "./components/NoteView";
 import NewNoteModal from "./components/NewNoteModal";
 import {
@@ -15,8 +14,6 @@ import {
 export default function App() {
   const [notes, setNotes] = createSignal<NoteListItem[]>([]);
   const [currentNote, setCurrentNote] = createSignal<Note | null>(null);
-  const [view, setView] = createSignal<"command" | "note">("command");
-  const [commandResults, setCommandResults] = createSignal<Result[]>([]);
   const [noteResults, setNoteResults] = createSignal<Result[]>([]);
   const [status, setStatus] = createSignal("Connecting...");
   const [isRecording, setIsRecording] = createSignal(false);
@@ -50,7 +47,7 @@ export default function App() {
             break;
 
           case "complete":
-            if (parsed.mode === "note" && currentNote()) {
+            if (currentNote()) {
               const updated = await appendToNote(
                 currentNote()!.filename,
                 parsed.result ?? "",
@@ -67,20 +64,9 @@ export default function App() {
                 {
                   transcript: parsed.transcript ?? null,
                   result: parsed.result ?? "",
-                  mode: "note",
                   time: new Date().toLocaleTimeString(),
                 },
                 ...noteResults(),
-              ]);
-            } else {
-              setCommandResults([
-                {
-                  transcript: parsed.transcript ?? null,
-                  result: parsed.result ?? "",
-                  mode: "command",
-                  time: new Date().toLocaleTimeString(),
-                },
-                ...commandResults(),
               ]);
             }
             setStatus("Ready");
@@ -92,34 +78,16 @@ export default function App() {
             setIsRecording(false);
             break;
         }
-      } else if (
-        typeof text === "string" &&
-        !text.startsWith("Recording started")
-      ) {
-        setCommandResults([
-          {
-            transcript: null,
-            result: text,
-            mode: "command",
-            time: new Date().toLocaleTimeString(),
-          },
-          ...commandResults(),
-        ]);
-        setStatus("Ready");
-        setIsRecording(false);
       }
     };
   }
 
-  async function startRecording(mode: "command" | "note"): Promise<void> {
+  async function startRecording(): Promise<void> {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!currentNote()) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (mode === "note" && currentNote()) {
-        ws.send(`note:${currentNote()!.filename}`);
-      } else {
-        ws.send(mode);
-      }
+      ws.send(`note:${currentNote()!.filename}`);
       mediaRecorder = new MediaRecorder(stream, {
         mimeType: "audio/webm;codecs=opus",
       });
@@ -156,7 +124,6 @@ export default function App() {
       const note = await getNote(filename);
       setCurrentNote(note);
       setNoteResults([]);
-      setView("note");
     } catch {}
   }
 
@@ -167,7 +134,6 @@ export default function App() {
       setNotes([newNote, ...notes()]);
       setCurrentNote(newNote);
       setNoteResults([]);
-      setView("note");
       setShowModal(false);
     } catch {}
   }
@@ -180,14 +146,12 @@ export default function App() {
       await deleteNote(note.filename);
       setNotes(notes().filter((n) => n.filename !== note.filename));
       setCurrentNote(null);
-      setView("command");
     } catch {}
   }
 
-  function showCommandView(): void {
+  function handleBack(): void {
     setCurrentNote(null);
     setNoteResults([]);
-    setView("command");
   }
 
   onMount(() => {
@@ -206,7 +170,6 @@ export default function App() {
         currentNote={currentNote()}
         onOpenNote={(f) => { handleOpenNote(f); setSidebarOpen(false); }}
         onNewNote={() => { setShowModal(true); setSidebarOpen(false); }}
-        onCommandMode={() => { showCommandView(); setSidebarOpen(false); }}
         open={sidebarOpen()}
       />
       <Show when={sidebarOpen()}>
@@ -216,24 +179,24 @@ export default function App() {
         <div class="mobile-topbar">
           <button class="btn-menu" onClick={() => setSidebarOpen(true)}>≡</button>
         </div>
-        <Show when={view() === "command"}>
-          <CommandView
-            results={commandResults()}
-            status={status()}
-            isRecording={isRecording()}
-            onRecord={() => startRecording("command")}
-            onStop={stopRecording}
-          />
-        </Show>
-        <Show when={view() === "note"}>
+        <Show
+          when={currentNote()}
+          fallback={
+            <div class="welcome-view">
+              <h1>Secretary</h1>
+              <p class="letterhead-subtitle">Voice-Powered Correspondence System</p>
+              <p class="welcome-hint">Select a note or create a new one to get started.</p>
+            </div>
+          }
+        >
           <NoteView
             note={currentNote()}
             results={noteResults()}
             status={status()}
             isRecording={isRecording()}
-            onRecord={() => startRecording("note")}
+            onRecord={() => startRecording()}
             onStop={stopRecording}
-            onBack={showCommandView}
+            onBack={handleBack}
             onDelete={handleDeleteNote}
           />
         </Show>

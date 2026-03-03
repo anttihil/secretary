@@ -1,5 +1,3 @@
-export type Mode = "command" | "note";
-
 export interface NoteListItem {
   filename: string;
   title: string;
@@ -14,7 +12,6 @@ export interface Note extends NoteListItem {
 export interface Result {
   transcript: string | null;
   result: string;
-  mode: Mode;
   time: string;
 }
 

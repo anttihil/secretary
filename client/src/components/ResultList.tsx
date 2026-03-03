@@ -13,7 +13,6 @@ const ResultList: Component<ResultListProps> = (props) => (
         <div class="result-item">
           <div class="timestamp">
             <span class="result-time">{item.time}</span>
-            <span class={`mode-tag ${item.mode}`}>{item.mode}</span>
           </div>
           <Show when={item.transcript}>
             <div class="transcript">
@@ -24,11 +23,7 @@ const ResultList: Component<ResultListProps> = (props) => (
           </Show>
           <div class="text">
             <span class="transcript-label result-label">
-              {item.transcript
-                ? item.mode === "command"
-                  ? "Response"
-                  : "Cleaned"
-                : ""}
+              {item.transcript ? "Cleaned" : ""}
             </span>
             <br />
             <span class="result-text">{item.result}</span>

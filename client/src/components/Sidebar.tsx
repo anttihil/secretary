@@ -7,7 +7,6 @@ interface SidebarProps {
   currentNote: Note | null;
   onOpenNote: (filename: string) => void;
   onNewNote: () => void;
-  onCommandMode: () => void;
   open?: boolean;
 }
 
@@ -34,11 +33,6 @@ const Sidebar: Component<SidebarProps> = (props) => (
           </div>
         )}
       </For>
-    </div>
-    <div class="sidebar-footer">
-      <button class="btn-command-mode" onClick={props.onCommandMode}>
-        Command Mode
-      </button>
     </div>
   </div>
 );

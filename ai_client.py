@@ -29,10 +29,6 @@ class AIClient(ABC):
         pass
 
     @abstractmethod
-    def text_prompt(self, prompt: str) -> str:
-        pass
-
-    @abstractmethod
     def clean_note(self, note: str, context: str = "") -> str:
         pass
 
@@ -108,10 +104,6 @@ class LocalAIClient(AIClient):
             case "note":
                 transcript = self.convert_speech_to_text(audio_data)
                 result = self.clean_note(transcript, context=note_context)
-                return {"transcript": transcript, "result": result}
-            case "command":
-                transcript = self.convert_speech_to_text(audio_data)
-                result = self.text_prompt(transcript)
                 return {"transcript": transcript, "result": result}
             case _:
                 raise ValueError(f"Unknown mode: {mode}")

@@ -328,13 +328,6 @@ async def websocket_endpoint(websocket: WebSocket):
                         note_filename = None
                         chunks = []
                         await websocket.send_text("Recording started (note mode)")
-                    case "command":
-                        if recording:
-                            continue
-                        recording = True
-                        mode = "command"
-                        chunks = []
-                        await websocket.send_text("Recording started (command mode)")
                     case "stop":
                         if not recording:
                             continue
