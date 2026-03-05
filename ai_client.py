@@ -24,6 +24,10 @@ def _detect_audio_format(audio_data: bytes) -> str:
 
 class AIClient(ABC):
     @abstractmethod
+    def reload_glossary(self):
+        pass
+
+    @abstractmethod
     def convert_speech_to_text(self, audio_data: bytes) -> str:
         pass
 
@@ -51,8 +55,8 @@ class LocalAIClient(AIClient):
         whisper_model: str = "base.en",
         glossary_path: Path | None = None,
     ):
-        self.whisper = WhisperModel(whisper_model, device="cpu", compute_type="int8")
-        self.llm = Llama(model_path=model_path, n_ctx=2048)
+        self.whisper = WhisperModel(whisper_model, device="cpu", compute_type="auto")
+        self.llm = Llama(model_path=model_path, n_gpu_layers=0, n_ctx=2048)
         self.glossary_path = glossary_path or Path("glossary.txt")
         self.glossary = _load_glossary(self.glossary_path)
 
@@ -89,10 +93,7 @@ class LocalAIClient(AIClient):
         if self.glossary:
             system += f"\n\nKnown vocabulary:\n{self.glossary}"
         if context.strip():
-            prompt = (
-                f"Existing note:\n{context}\n\n"
-                f"New transcript to clean up:\n{note}"
-            )
+            prompt = f"Existing note:\n{context}\n\nNew transcript to clean up:\n{note}"
         else:
             prompt = f"Fix grammar, spelling, and missing words:\n{note}"
         return self.text_prompt(prompt, system=system)

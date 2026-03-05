@@ -36,6 +36,16 @@ cp .env.example .env
 uv run fastapi dev main.py
 ```
 
+### GPU acceleration (optional)
+
+By default, `llama-cpp-python` is installed as CPU-only. To enable GPU acceleration on NVIDIA hardware, reinstall it with CUDA support:
+
+```bash
+CMAKE_ARGS="-DGGML_CUDA=on" uv pip install llama-cpp-python --upgrade --force-reinstall --no-cache-dir
+```
+
+This compiles from source and takes several minutes. Requires the CUDA toolkit (`nvcc --version` to verify). Check your CUDA version with `nvidia-smi`.
+
 ### AWS mode
 
 To use AWS services (Transcribe, Bedrock, S3) instead of local models:
