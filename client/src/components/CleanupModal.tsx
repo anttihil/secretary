@@ -1,7 +1,6 @@
 import { createSignal, createMemo, For, Show, Switch, Match } from "solid-js";
 import type { Component } from "solid-js";
 import { computeDiff, buildResult, type DiffToken } from "../diff";
-import { addToGlossary } from "../api";
 
 type Choice = "old" | "new";
 
@@ -16,65 +15,53 @@ const CleanupModal: Component<CleanupModalProps> = (props) => {
   const tokens = createMemo(() => computeDiff(props.original, props.cleaned));
   // Keyed by delete token id for pairs, or token id for unpaired
   const [choices, setChoices] = createSignal<Map<number, Choice>>(new Map());
-  const [contextMenu, setContextMenu] = createSignal<{
-    x: number;
-    y: number;
-    deleteToken: DiffToken;
-    insertToken: DiffToken;
-  } | null>(null);
 
-  function choose(key: number, side: Choice) {
+  function chooseGroup(group: ChangeGroup, side: Choice) {
     const next = new Map(choices());
-    if (next.get(key) === side) {
-      next.delete(key); // clicking again returns to "old → new" form
+    // Check if toggling off (clicking same choice again)
+    const toggling = next.get(group.key) === side;
+    const allIds = [...group.dels.map((t) => t.id), ...group.ins.map((t) => t.id)];
+    if (toggling) {
+      for (const id of allIds) next.delete(id);
     } else {
-      next.set(key, side);
+      for (const id of allIds) next.set(id, side);
     }
     setChoices(next);
-  }
-
-  function handleContextMenu(e: MouseEvent, deleteToken: DiffToken, insertToken: DiffToken) {
-    e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, deleteToken, insertToken });
-  }
-
-  async function handleAddToGlossary() {
-    const menu = contextMenu();
-    if (!menu) return;
-    try {
-      await addToGlossary(menu.deleteToken.text, menu.insertToken.text);
-    } catch (e) {
-      console.error("Failed to add to glossary:", e);
-    }
-    setContextMenu(null);
   }
 
   function handleApply() {
     props.onApply(buildResult(tokens(), choices()));
   }
 
-  /** Group tokens for rendering: equal tokens, paired tokens, unpaired tokens */
-  const groups = createMemo(() => {
-    const toks = tokens();
-    type Group =
-      | { type: "equal"; token: DiffToken }
-      | { type: "pair"; del: DiffToken; ins: DiffToken }
-      | { type: "unpaired"; token: DiffToken };
-    const result: Group[] = [];
-    const seen = new Set<number>();
+  type ChangeGroup = { type: "change"; dels: DiffToken[]; ins: DiffToken[]; key: number };
+  type Group =
+    | { type: "equal"; tokens: DiffToken[] }
+    | ChangeGroup;
 
-    for (const t of toks) {
-      if (seen.has(t.id)) continue;
-      if (t.kind === "equal") {
-        result.push({ type: "equal", token: t });
-      } else if (t.pairId !== undefined) {
-        const pair = toks.find((p) => p.id === t.pairId)!;
-        seen.add(pair.id);
-        const del = t.kind === "delete" ? t : pair;
-        const ins = t.kind === "insert" ? t : pair;
-        result.push({ type: "pair", del, ins });
+  /** Group tokens: consecutive equals merge, consecutive non-equals merge */
+  const groups = createMemo((): Group[] => {
+    const toks = tokens();
+    const result: Group[] = [];
+
+    let i = 0;
+    while (i < toks.length) {
+      if (toks[i].kind === "equal") {
+        const eqTokens: DiffToken[] = [];
+        while (i < toks.length && toks[i].kind === "equal") {
+          eqTokens.push(toks[i]);
+          i++;
+        }
+        result.push({ type: "equal", tokens: eqTokens });
       } else {
-        result.push({ type: "unpaired", token: t });
+        const dels: DiffToken[] = [];
+        const ins: DiffToken[] = [];
+        const firstId = toks[i].id;
+        while (i < toks.length && toks[i].kind !== "equal") {
+          if (toks[i].kind === "delete") dels.push(toks[i]);
+          else ins.push(toks[i]);
+          i++;
+        }
+        result.push({ type: "change", dels, ins, key: firstId });
       }
     }
     return result;
@@ -85,7 +72,6 @@ const CleanupModal: Component<CleanupModalProps> = (props) => {
       class="modal-overlay"
       onClick={(e) => {
         if (e.target === e.currentTarget) props.onClose();
-        setContextMenu(null);
       }}
     >
       <div class="modal cleanup-modal">
@@ -96,71 +82,66 @@ const CleanupModal: Component<CleanupModalProps> = (props) => {
             <For each={groups()}>
               {(group) => (
                 <Switch>
-                  <Match when={group.type === "equal" && "token" in group}>
-                    <span>{(group as any).token.text}{(group as any).token.space}</span>
+                  <Match when={group.type === "equal"}>
+                    <For each={(group as { type: "equal"; tokens: DiffToken[] }).tokens}>
+                      {(t) => <span>{t.text}{t.space}</span>}
+                    </For>
                   </Match>
-                  <Match when={group.type === "pair" && "del" in group}>
+                  <Match when={group.type === "change"}>
                     {(() => {
-                      const g = group as { type: "pair"; del: DiffToken; ins: DiffToken };
-                      const choice = () => choices().get(g.del.id);
+                      const g = group as ChangeGroup;
+                      const delText = () => g.dels.map((t) => t.text).join(" ");
+                      const insText = () => g.ins.map((t) => t.text).join(" ");
+                      const choice = () => choices().get(g.key);
+                      const trailingSpace = () => {
+                        const last = g.ins.length > 0 ? g.ins[g.ins.length - 1] : g.dels[g.dels.length - 1];
+                        return last.space;
+                      };
                       return (
-                        <Show
-                          when={choice() === undefined}
-                          fallback={
-                            <span
-                              class={`diff-token diff-resolved ${choice() === "old" ? "diff-kept-old" : "diff-kept-new"}`}
-                              onClick={() => choose(g.del.id, choice()!)}
-                            >
-                              {choice() === "old" ? g.del.text : g.ins.text}
-                            </span>
-                          }
-                        >
-                          <span
-                            class="diff-pair"
-                            onContextMenu={(e) => handleContextMenu(e, g.del, g.ins)}
+                        <>
+                          <Show
+                            when={choice() === undefined}
+                            fallback={
+                              <span
+                                class={`diff-token diff-resolved ${choice() === "old" ? "diff-kept-old" : "diff-kept-new"}`}
+                                onClick={() => chooseGroup(g, choice()!)}
+                              >
+                                {choice() === "old" ? delText() : insText()}
+                              </span>
+                            }
                           >
-                            <span
-                              class="diff-token diff-delete"
-                              onClick={() => choose(g.del.id, "old")}
-                            >{g.del.text}</span>
-                            <span class="diff-arrow"> → </span>
-                            <span
-                              class="diff-token diff-insert"
-                              onClick={() => choose(g.del.id, "new")}
-                            >{g.ins.text}</span>
-                          </span>
-                        </Show>
+                            <Show when={g.dels.length > 0 && g.ins.length > 0}>
+                              <span
+                                class="diff-pair"
+                              >
+                                <span
+                                  class="diff-token diff-delete"
+                                  onClick={() => chooseGroup(g, "old")}
+                                >{delText()}</span>
+                                <span class="diff-arrow"> → </span>
+                                <span
+                                  class="diff-token diff-insert"
+                                  onClick={() => chooseGroup(g, "new")}
+                                >{insText()}</span>
+                              </span>
+                            </Show>
+                            <Show when={g.dels.length > 0 && g.ins.length === 0}>
+                              <span
+                                class="diff-token diff-delete"
+                                onClick={() => chooseGroup(g, "old")}
+                              >{delText()}</span>
+                            </Show>
+                            <Show when={g.dels.length === 0 && g.ins.length > 0}>
+                              <span
+                                class="diff-token diff-insert"
+                                onClick={() => chooseGroup(g, "new")}
+                              >{insText()}</span>
+                            </Show>
+                          </Show>
+                          {trailingSpace()}
+                        </>
                       );
                     })()}
-                    {(group as any).ins.space}
-                  </Match>
-                  <Match when={group.type === "unpaired" && "token" in group}>
-                    {(() => {
-                      const t = (group as { type: "unpaired"; token: DiffToken }).token;
-                      const choice = () => choices().get(t.id);
-                      const isDelete = t.kind === "delete";
-                      return (
-                        <Show
-                          when={choice() === undefined}
-                          fallback={
-                            <span
-                              class={`diff-token diff-resolved ${choice() === "old" ? "diff-kept-old" : "diff-kept-new"}`}
-                              onClick={() => choose(t.id, choice()!)}
-                            >
-                              {choice() === "old" ? (isDelete ? t.text : "") : (isDelete ? "" : t.text)}
-                            </span>
-                          }
-                        >
-                          <span
-                            class={`diff-token ${isDelete ? "diff-delete" : "diff-insert"}`}
-                            onClick={() => choose(t.id, isDelete ? "old" : "new")}
-                          >
-                            {t.text}
-                          </span>
-                        </Show>
-                      );
-                    })()}
-                    {(group as any).token.space}
                   </Match>
                 </Switch>
               )}
@@ -176,19 +157,6 @@ const CleanupModal: Component<CleanupModalProps> = (props) => {
           </button>
         </div>
       </div>
-      <Show when={contextMenu()}>
-        <div
-          class="context-menu"
-          style={{
-            left: `${contextMenu()!.x}px`,
-            top: `${contextMenu()!.y}px`,
-          }}
-        >
-          <button onClick={handleAddToGlossary}>
-            Add to glossary: {contextMenu()!.deleteToken.text} → {contextMenu()!.insertToken.text}
-          </button>
-        </div>
-      </Show>
     </div>
   );
 };
