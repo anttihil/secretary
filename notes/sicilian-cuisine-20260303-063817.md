@@ -1,10 +1,10 @@
 ---
 title: Sicilian cuisine
 created: 2026-03-03T06:38:17
-updated: 2026-03-03T06:52:30
+updated: 2026-03-05T02:30:24
 ---
 
-Yesterday I made a Pantalian or Pantellarian potato salad. It had red onions, potatoes, basil, tomatoes, and so on. It was delicious.
+Yesterday, I made a Pantalian or Pantellarian potato salad. It had red onions, potatoes, basil, tomatoes, and so on. It was delicious.
 
 I'm very interested in making them, but they are difficult to fry because it's difficult to get rid of the frying oil, and they might be a little bit unhealthy.
 
