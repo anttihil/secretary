@@ -70,3 +70,52 @@ Connect via WebSocket to `/ws` and send text commands:
 - `close` - Close the connection
 
 Send binary audio chunks between `note`/`command` and `stop`.
+
+## Running as a Linux service
+
+Create a systemd unit file at `/etc/systemd/system/secretary.service`:
+
+```ini
+[Unit]
+Description=Secretary voice assistant
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/path/to/secretary
+EnvironmentFile=/path/to/secretary/.env
+ExecStart=/path/to/secretary/.venv/bin/fastapi run main.py --port 8000
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Replace `YOUR_USER` and the paths as appropriate. Then enable and start:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now secretary
+sudo systemctl status secretary
+```
+
+View logs with `journalctl -u secretary -f`.
+
+## Tailnet hosting
+
+To expose the web interface on your [Tailscale](https://tailscale.com) tailnet, use `tailscale serve`:
+
+```bash
+tailscale serve --bg 8000
+```
+
+This makes the app available at `https://<your-machine-name>.<tailnet>.ts.net` over HTTPS, accessible only to devices on your tailnet.
+
+To restrict access to your own user account only:
+
+```bash
+tailscale serve --bg --set-path / http://localhost:8000
+```
+
+Check serve status with `tailscale serve status` and stop with `tailscale serve --https=443 off`.
