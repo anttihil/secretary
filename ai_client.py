@@ -1,3 +1,4 @@
+import os
 import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -55,8 +56,14 @@ class LocalAIClient(AIClient):
         whisper_model: str = "base.en",
         glossary_path: Path | None = None,
     ):
-        self.whisper = WhisperModel(whisper_model, device="cpu", compute_type="auto")
-        self.llm = Llama(model_path=model_path, n_gpu_layers=0, n_ctx=2048)
+        whisper_device = os.environ.get("WHISPER_DEVICE", "cpu")
+        whisper_compute_type = os.environ.get("WHISPER_COMPUTE_TYPE", "auto")
+        llm_gpu_layers = int(os.environ.get("LLM_GPU_LAYERS", "0"))
+
+        self.whisper = WhisperModel(
+            whisper_model, device=whisper_device, compute_type=whisper_compute_type
+        )
+        self.llm = Llama(model_path=model_path, n_gpu_layers=llm_gpu_layers, n_ctx=2048)
         self.glossary_path = glossary_path or Path("glossary.txt")
         self.glossary = _load_glossary(self.glossary_path)
 
