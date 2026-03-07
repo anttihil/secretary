@@ -29,6 +29,16 @@ FRONTMATTER_TIMESTAMP_FMT = "%Y-%m-%dT%H:%M:%S"
 FILE_TIMESTAMP_FMT = "%Y%m%d-%H%M%S"
 FILENAME_RE = re.compile(r"^.+-\d{8}-\d{6}\.md$")
 
+
+def validate_note_path(filename: str) -> Path:
+    """Validate and resolve a note path, preventing directory traversal."""
+    if ".." in filename or filename.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = (NOTES_DIR / filename).resolve()
+    if not path.is_relative_to(NOTES_DIR.resolve()):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    return path
+
 logger = logging.getLogger(__name__)
 
 
@@ -283,6 +293,11 @@ async def update_settings_endpoint(req: UpdateSettingsRequest):
 
 class CreateNoteRequest(BaseModel):
     title: str
+    directory: str = ""
+
+
+class CreateDirectoryRequest(BaseModel):
+    path: str
 
 
 class AppendNoteRequest(BaseModel):
@@ -304,14 +319,25 @@ async def list_notes():
         ensure_notes_dir()
     except OSError:
         raise HTTPException(500, "No notes directory configured")
-    note_files = NOTES_DIR.glob("*.md")
+    note_files = NOTES_DIR.rglob("*.md")
+    resolved = NOTES_DIR.resolve()
 
     note_data = [
-        {"filename": path.name, **parse_frontmatter(path.read_text())[0]}
+        {
+            "filename": str(path.resolve().relative_to(resolved)),
+            **parse_frontmatter(path.read_text())[0],
+        }
         for path in note_files
     ]
 
-    return sorted(note_data, key=lambda n: n.get("updated", ""), reverse=True)
+    directories = sorted(
+        str(d.resolve().relative_to(resolved))
+        for d in NOTES_DIR.rglob("*")
+        if d.is_dir()
+    )
+
+    notes = sorted(note_data, key=lambda n: n.get("updated", ""), reverse=True)
+    return {"notes": notes, "directories": directories}
 
 
 @app.post("/api/notes")
@@ -320,11 +346,20 @@ async def create_note(req: CreateNoteRequest):
         ensure_notes_dir()
     except OSError:
         raise HTTPException(500, "No notes directory configured.")
+
+    if req.directory:
+        validate_note_path(req.directory)
+        target_dir = NOTES_DIR / req.directory
+        if not target_dir.is_dir():
+            raise HTTPException(400, "Directory does not exist")
+    else:
+        target_dir = NOTES_DIR
+
     timestamp = datetime.now(timezone.utc)
     frontmatter_timestamp = timestamp.strftime(FRONTMATTER_TIMESTAMP_FMT)
     file_timestamp = timestamp.strftime(FILE_TIMESTAMP_FMT)
 
-    filename = f"{slugify(req.title)}-{file_timestamp}.md"
+    basename = f"{slugify(req.title)}-{file_timestamp}.md"
 
     metadata = {
         "title": req.title,
@@ -332,16 +367,17 @@ async def create_note(req: CreateNoteRequest):
         "updated": frontmatter_timestamp,
     }
 
-    path = NOTES_DIR / filename
-
+    path = target_dir / basename
     path.write_text(data=format_frontmatter(metadata, ""))
     schedule_git_sync()
+
+    filename = str(path.resolve().relative_to(NOTES_DIR.resolve()))
     return {"filename": filename, **metadata}
 
 
-@app.get("/api/notes/{filename}")
+@app.get("/api/notes/{filename:path}")
 async def get_note(filename: str):
-    path = NOTES_DIR / filename
+    path = validate_note_path(filename)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Note not found")
     text = path.read_text()
@@ -349,9 +385,9 @@ async def get_note(filename: str):
     return {"filename": filename, "body": body, **metadata}
 
 
-@app.post("/api/notes/{filename}/append")
+@app.post("/api/notes/{filename:path}/append")
 async def append_to_note(filename: str, req: AppendNoteRequest):
-    path = NOTES_DIR / filename
+    path = validate_note_path(filename)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Note not found")
     metadata, body = parse_frontmatter(path.read_text())
@@ -366,9 +402,9 @@ async def append_to_note(filename: str, req: AppendNoteRequest):
     return {"filename": filename, "body": body, **metadata}
 
 
-@app.post("/api/notes/{filename}/clean")
+@app.post("/api/notes/{filename:path}/clean")
 async def clean_note(filename: str):
-    path = NOTES_DIR / filename
+    path = validate_note_path(filename)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Note not found")
     _, body = parse_frontmatter(path.read_text())
@@ -380,9 +416,9 @@ async def clean_note(filename: str):
     return {"cleaned": cleaned}
 
 
-@app.post("/api/notes/{filename}/replace")
+@app.post("/api/notes/{filename:path}/replace")
 async def replace_note_body(filename: str, req: ReplaceNoteBodyRequest):
-    path = NOTES_DIR / filename
+    path = validate_note_path(filename)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Note not found")
     metadata, _ = parse_frontmatter(path.read_text())
@@ -394,14 +430,15 @@ async def replace_note_body(filename: str, req: ReplaceNoteBodyRequest):
     return {"filename": filename, "body": body, **metadata}
 
 
-@app.post("/api/notes/migrate")
+@app.post("/api/migrate")
 async def migrate_notes():
     ensure_notes_dir()
+    resolved = NOTES_DIR.resolve()
     migrated = 0
     skipped = 0
     files = []
 
-    for path in sorted(NOTES_DIR.glob("*.md")):
+    for path in sorted(NOTES_DIR.rglob("*.md")):
         metadata, body = parse_frontmatter(path.read_text())
         actions = []
 
@@ -442,7 +479,7 @@ async def migrate_notes():
 
         path.write_text(format_frontmatter(metadata, body))
 
-        original_filename = path.name
+        original_filename = str(path.resolve().relative_to(resolved))
         new_filename = original_filename
 
         if not filename_compliant:
@@ -450,9 +487,11 @@ async def migrate_notes():
                 metadata["created"], FRONTMATTER_TIMESTAMP_FMT
             )
             created_ts = created_dt.strftime(FILE_TIMESTAMP_FMT)
-            new_filename = f"{slugify(metadata['title'])}-{created_ts}.md"
-            path.rename(NOTES_DIR / new_filename)
-            actions.append(f"renamed to {new_filename}")
+            new_basename = f"{slugify(metadata['title'])}-{created_ts}.md"
+            new_path = path.parent / new_basename
+            path.rename(new_path)
+            new_filename = str(new_path.resolve().relative_to(resolved))
+            actions.append(f"renamed to {new_basename}")
 
         migrated += 1
         files.append(
@@ -469,14 +508,21 @@ async def migrate_notes():
     return {"migrated": migrated, "skipped": skipped, "files": files}
 
 
-@app.delete("/api/notes/{filename}")
+@app.post("/api/directories")
+async def create_directory(req: CreateDirectoryRequest):
+    validate_note_path(req.path)
+    dir_path = NOTES_DIR / req.path
+    dir_path.mkdir(parents=True, exist_ok=True)
+    (dir_path / ".gitkeep").touch()
+    schedule_git_sync()
+    return {"path": req.path}
+
+
+@app.delete("/api/notes/{filename:path}")
 async def delete_note(filename: str):
-    path = NOTES_DIR / filename
+    path = validate_note_path(filename)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Note not found")
-    # Prevent path traversal
-    if path.resolve().parent != NOTES_DIR.resolve():
-        raise HTTPException(status_code=400, detail="Invalid filename")
     path.unlink()
     schedule_git_sync()
     return {"deleted": filename}
@@ -546,7 +592,10 @@ async def websocket_endpoint(websocket: WebSocket):
                             continue
                         recording = True
                         mode = "note"
-                        note_filename = data[5:] or None
+                        nf = data[5:]
+                        if nf:
+                            validate_note_path(nf)
+                        note_filename = nf or None
                         chunks = []
                         await websocket.send_text("Recording started (note mode)")
                     case "note":

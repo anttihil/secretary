@@ -122,15 +122,29 @@ button:disabled {
   transform: none;
 }
 
-.btn-new-note {
+.btn-new-note, .btn-new-folder {
   padding: 0.35rem 0.65rem;
   font-size: 0.8rem;
   border-color: var(--ink-blue);
   color: var(--ink-blue);
   box-shadow: 2px 2px 0 rgba(44,74,124,0.3);
 }
-.btn-new-note:hover {
+.btn-new-note:hover, .btn-new-folder:hover {
   box-shadow: 1px 1px 0 rgba(44,74,124,0.3);
+}
+
+.btn-new-folder {
+  border-color: var(--border-manila);
+  color: var(--ink-secondary);
+  box-shadow: 2px 2px 0 var(--key-shadow);
+}
+.btn-new-folder:hover {
+  box-shadow: 1px 1px 0 var(--key-shadow);
+}
+
+.sidebar-header-buttons {
+  display: flex;
+  gap: 0.4rem;
 }
 
 .btn-cancel {
@@ -225,6 +239,37 @@ button:disabled {
   color: var(--ink-placeholder);
   font-size: 0.9rem;
   font-style: italic;
+}
+
+/* ── Directory tree ── */
+.dir-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-light);
+}
+.dir-item:hover {
+  background: rgba(180,160,120,0.12);
+}
+
+.dir-toggle {
+  font-size: 0.7rem;
+  color: var(--ink-faded);
+  transition: transform 0.15s;
+  display: inline-block;
+}
+.dir-toggle.collapsed {
+  transform: rotate(-90deg);
+}
+
+.dir-name {
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  color: var(--ink-secondary);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .note-item {
@@ -560,6 +605,24 @@ button:disabled {
 .modal input::placeholder {
   color: var(--ink-placeholder);
   font-style: italic;
+}
+
+.modal-select {
+  flex: 1;
+  padding: 0.35rem 0.5rem;
+  border: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  color: var(--ink-primary);
+  outline: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234a3f30' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  padding-right: 1.5rem;
 }
 
 .modal-buttons {

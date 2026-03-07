@@ -9,6 +9,11 @@ export interface Note extends NoteListItem {
   body: string;
 }
 
+export interface NotesListResponse {
+  notes: NoteListItem[];
+  directories: string[];
+}
+
 export interface Result {
   transcript: string | null;
   result: string;

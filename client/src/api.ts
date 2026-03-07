@@ -1,29 +1,41 @@
-import type { Note, NoteListItem, Settings } from "./types";
+import type { Note, NotesListResponse, Settings } from "./types";
 
-export async function fetchNotes(): Promise<NoteListItem[]> {
+function encodeNotePath(filename: string): string {
+  return filename
+    .split("/")
+    .map((s) => encodeURIComponent(s))
+    .join("/");
+}
+
+export async function fetchNotes(): Promise<NotesListResponse> {
   const resp = await fetch("/api/notes");
   if (!resp.ok) throw new Error("Failed to fetch notes");
   return resp.json();
 }
 
-export async function createNote(title: string): Promise<NoteListItem> {
+export async function createNote(
+  title: string,
+  directory?: string,
+): Promise<{ filename: string; title: string; created: string; updated: string }> {
   const resp = await fetch("/api/notes", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ title, directory: directory || "" }),
   });
   if (!resp.ok) throw new Error("Failed to create note");
   return resp.json();
 }
 
 export async function getNote(filename: string): Promise<Note> {
-  const resp = await fetch(`/api/notes/${filename}`);
+  const resp = await fetch(`/api/notes/${encodeNotePath(filename)}`);
   if (!resp.ok) throw new Error("Note not found");
   return resp.json();
 }
 
 export async function deleteNote(filename: string): Promise<{ deleted: string }> {
-  const resp = await fetch(`/api/notes/${filename}`, { method: "DELETE" });
+  const resp = await fetch(`/api/notes/${encodeNotePath(filename)}`, {
+    method: "DELETE",
+  });
   if (!resp.ok) throw new Error("Failed to delete note");
   return resp.json();
 }
@@ -47,7 +59,9 @@ export async function addToGlossary(
 export async function cleanNote(
   filename: string,
 ): Promise<{ cleaned: string }> {
-  const resp = await fetch(`/api/notes/${filename}/clean`, { method: "POST" });
+  const resp = await fetch(`/api/notes/${encodeNotePath(filename)}/clean`, {
+    method: "POST",
+  });
   if (!resp.ok) throw new Error("Failed to clean note");
   return resp.json();
 }
@@ -56,7 +70,7 @@ export async function replaceNoteBody(
   filename: string,
   body: string,
 ): Promise<Note> {
-  const resp = await fetch(`/api/notes/${filename}/replace`, {
+  const resp = await fetch(`/api/notes/${encodeNotePath(filename)}/replace`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ body }),
@@ -70,7 +84,7 @@ export async function migrateNotes(): Promise<{
   skipped: number;
   files: { original_filename: string; filename: string; actions: string[] }[];
 }> {
-  const resp = await fetch("/api/notes/migrate", { method: "POST" });
+  const resp = await fetch("/api/migrate", { method: "POST" });
   if (!resp.ok) throw new Error("Migration failed");
   return resp.json();
 }
@@ -97,11 +111,23 @@ export async function saveSettings(
 }
 
 export async function appendToNote(filename: string, text: string): Promise<Note> {
-  const resp = await fetch(`/api/notes/${filename}/append`, {
+  const resp = await fetch(`/api/notes/${encodeNotePath(filename)}/append`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
   });
   if (!resp.ok) throw new Error("Failed to append to note");
+  return resp.json();
+}
+
+export async function createDirectory(
+  path: string,
+): Promise<{ path: string }> {
+  const resp = await fetch("/api/directories", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  if (!resp.ok) throw new Error("Failed to create directory");
   return resp.json();
 }

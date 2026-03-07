@@ -1,30 +1,33 @@
-import { createSignal } from "solid-js";
+import { createSignal, For } from "solid-js";
 import type { Component } from "solid-js";
 
 interface NewNoteModalProps {
   onClose: () => void;
-  onCreate: (title: string) => void;
+  onCreate: (title: string, directory: string) => void;
+  directories: string[];
+  defaultDirectory?: string;
 }
 
-const NewNoteModal: Component<NewNoteModalProps> = ({ onClose, onCreate }) => {
+const NewNoteModal: Component<NewNoteModalProps> = (props) => {
   const [title, setTitle] = createSignal("");
+  const [directory, setDirectory] = createSignal(props.defaultDirectory ?? "");
 
   function handleCreate(): void {
     const t = title().trim();
     if (!t) return;
-    onCreate(t);
+    props.onCreate(t, directory());
     setTitle("");
   }
 
   function handleKeyDown(e: KeyboardEvent): void {
     if (e.key === "Enter") handleCreate();
-    if (e.key === "Escape") onClose();
+    if (e.key === "Escape") props.onClose();
   }
 
   return (
     <div
       class="modal-overlay"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+      onClick={(e) => e.target === e.currentTarget && props.onClose()}
     >
       <div class="modal">
         <div class="modal-header">Memorandum</div>
@@ -40,9 +43,22 @@ const NewNoteModal: Component<NewNoteModalProps> = ({ onClose, onCreate }) => {
               autofocus
             />
           </div>
+          <div class="modal-field-row">
+            <span class="modal-field-label">FILED:</span>
+            <select
+              class="modal-select"
+              value={directory()}
+              onChange={(e) => setDirectory(e.currentTarget.value)}
+            >
+              <option value="">(root)</option>
+              <For each={props.directories}>
+                {(dir) => <option value={dir}>{dir}</option>}
+              </For>
+            </select>
+          </div>
         </div>
         <div class="modal-buttons">
-          <button class="btn-cancel" onClick={onClose}>
+          <button class="btn-cancel" onClick={props.onClose}>
             Cancel
           </button>
           <button class="btn-create" onClick={handleCreate}>
