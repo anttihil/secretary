@@ -74,8 +74,13 @@ def git_sync():
                 check=True,
                 capture_output=True,
             )
-        except subprocess.CalledProcessError:
-            pass
+        except subprocess.CalledProcessError as commit_err:
+            if b"nothing to commit" not in commit_err.stdout:
+                logger.error(
+                    "Git commit failed: %s (stderr: %s)",
+                    commit_err,
+                    commit_err.stderr,
+                )
         subprocess.run(["git", "push"], cwd=NOTES_DIR, check=True, capture_output=True)
 
     except subprocess.CalledProcessError as e:
@@ -141,50 +146,71 @@ class AudioJob:
     note_filename: str | None = None
 
 
-audio_queue: asyncio.Queue[AudioJob] = asyncio.Queue()
+@dataclass
+class CleanupJob:
+    job_id: str
+    body: str
+    future: asyncio.Future
+
+
+job_queue: asyncio.Queue[AudioJob | CleanupJob] = asyncio.Queue()
 audio_executor = ThreadPoolExecutor(max_workers=1)
+worker_busy = False
 
 ai_client = create_ai_client()
 
 
 async def audio_worker():
-    """Long-lived worker that processes audio jobs from the queue."""
+    """Long-lived worker that processes audio and cleanup jobs from the queue."""
+    global worker_busy
     while True:
-        job = await audio_queue.get()
+        job = await job_queue.get()
+        worker_busy = True
         try:
-            note_context = ""
-            if job.note_filename and job.mode == "note":
-                note_path = NOTES_DIR / job.note_filename
-                if note_path.exists():
-                    _, note_context = parse_frontmatter(note_path.read_text())
-
             loop = asyncio.get_event_loop()
-            job_result = await loop.run_in_executor(
-                audio_executor,
-                ai_client.process_audio,
-                job.audio_data,
-                job.mode,
-                note_context,
-            )
-            await job.websocket.send_json(
-                {
-                    "status": "complete",
-                    "job_id": job.job_id,
-                    "mode": job.mode,
-                    "transcript": job_result["transcript"],
-                    "result": job_result["result"],
-                }
-            )
-        except Exception as e:
-            logger.error("Audio worker error (job %s): %s", job.job_id, e)
-            try:
-                await job.websocket.send_json(
-                    {"status": "error", "job_id": job.job_id, "message": str(e)}
+            if isinstance(job, CleanupJob):
+                cleaned = await loop.run_in_executor(
+                    audio_executor, ai_client.clean_note, job.body
                 )
-            except Exception:
-                pass
+                job.future.set_result(cleaned)
+            else:
+                note_context = ""
+                if job.note_filename and job.mode == "note":
+                    note_path = NOTES_DIR / job.note_filename
+                    if note_path.exists():
+                        _, note_context = parse_frontmatter(note_path.read_text())
+
+                job_result = await loop.run_in_executor(
+                    audio_executor,
+                    ai_client.process_audio,
+                    job.audio_data,
+                    job.mode,
+                    note_context,
+                )
+                await job.websocket.send_json(
+                    {
+                        "status": "complete",
+                        "job_id": job.job_id,
+                        "mode": job.mode,
+                        "transcript": job_result["transcript"],
+                        "result": job_result["result"],
+                    }
+                )
+        except Exception as e:
+            logger.error("Worker error (job %s): %s", job.job_id, e)
+            if isinstance(job, CleanupJob):
+                if not job.future.done():
+                    job.future.set_exception(e)
+            else:
+                try:
+                    await job.websocket.send_json(
+                        {"status": "error", "job_id": job.job_id, "message": str(e)}
+                    )
+                except Exception:
+                    pass
         finally:
-            audio_queue.task_done()
+            worker_busy = False
+            job_queue.task_done()
 
 
 @asynccontextmanager
@@ -199,6 +225,14 @@ async def lifespan(app):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+# --- Queue status ---
+
+
+@app.get("/api/queue")
+async def queue_status():
+    return {"total": job_queue.qsize() + (1 if worker_busy else 0)}
 
 
 # --- Notes REST API ---
@@ -297,10 +331,9 @@ async def clean_note(filename: str):
     _, body = parse_frontmatter(path.read_text())
     if not body.strip():
         raise HTTPException(status_code=400, detail="Note is empty")
-    loop = asyncio.get_event_loop()
-    cleaned = await loop.run_in_executor(
-        audio_executor, ai_client.clean_note, body
-    )
+    future: asyncio.Future = asyncio.get_event_loop().create_future()
+    await job_queue.put(CleanupJob(job_id=str(uuid.uuid4()), body=body, future=future))
+    cleaned = await future
     return {"cleaned": cleaned}
 
 
@@ -493,7 +526,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             websocket=websocket,
                             note_filename=note_filename,
                         )
-                        await audio_queue.put(job)
+                        await job_queue.put(job)
                         await websocket.send_json(
                             {"status": "queued", "job_id": job_id}
                         )
