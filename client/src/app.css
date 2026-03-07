@@ -188,6 +188,26 @@ button:disabled {
   padding: 0.5rem;
 }
 
+.sidebar-footer {
+  padding: 0.6rem 1rem;
+  border-top: 1px solid var(--border-light);
+}
+
+.btn-migrate {
+  font-size: 0.7rem;
+  color: var(--ink-secondary);
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  opacity: 0.6;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.btn-migrate:hover {
+  opacity: 1;
+}
+
 .no-notes {
   padding: 1rem 0.75rem;
   color: var(--ink-placeholder);

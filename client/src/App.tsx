@@ -12,6 +12,7 @@ import {
   appendToNote,
   cleanNote,
   replaceNoteBody,
+  migrateNotes,
 } from "./api";
 
 export default function App() {
@@ -176,6 +177,17 @@ export default function App() {
     }
   }
 
+  async function handleMigrate(): Promise<void> {
+    try {
+      const result = await migrateNotes();
+      await loadNotes();
+      alert(`Migrated ${result.migrated} notes.`);
+    } catch (e) {
+      console.error("Migration failed:", e);
+      alert("Migration failed.");
+    }
+  }
+
   async function applyCleanup(finalText: string): Promise<void> {
     const note = currentNote();
     if (!note) return;
@@ -211,6 +223,7 @@ export default function App() {
         currentNote={currentNote()}
         onOpenNote={(f) => { handleOpenNote(f); setSidebarOpen(false); }}
         onNewNote={() => { setShowModal(true); setSidebarOpen(false); }}
+        onMigrate={handleMigrate}
         open={sidebarOpen()}
       />
       <Show when={sidebarOpen()}>

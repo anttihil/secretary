@@ -7,6 +7,7 @@ interface SidebarProps {
   currentNote: Note | null;
   onOpenNote: (filename: string) => void;
   onNewNote: () => void;
+  onMigrate: () => void;
   open?: boolean;
 }
 
@@ -33,6 +34,11 @@ const Sidebar: Component<SidebarProps> = (props) => (
           </div>
         )}
       </For>
+    </div>
+    <div class="sidebar-footer">
+      <button class="btn-migrate" onClick={props.onMigrate}>
+        Import legacy notes
+      </button>
     </div>
   </div>
 );

@@ -65,6 +65,16 @@ export async function replaceNoteBody(
   return resp.json();
 }
 
+export async function migrateNotes(): Promise<{
+  migrated: number;
+  skipped: number;
+  files: { original_filename: string; filename: string; actions: string[] }[];
+}> {
+  const resp = await fetch("/api/notes/migrate", { method: "POST" });
+  if (!resp.ok) throw new Error("Migration failed");
+  return resp.json();
+}
+
 export async function appendToNote(filename: string, text: string): Promise<Note> {
   const resp = await fetch(`/api/notes/${filename}/append`, {
     method: "POST",
