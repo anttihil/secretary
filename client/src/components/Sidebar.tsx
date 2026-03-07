@@ -1,4 +1,4 @@
-import { For, Show, createSignal, createMemo } from "solid-js";
+import { For, Show, createSignal, createMemo, onMount, onCleanup } from "solid-js";
 import type { Component } from "solid-js";
 import type { NoteListItem, Note } from "../types";
 
@@ -7,6 +7,13 @@ interface DirNode {
   path: string;
   children: DirNode[];
   notes: NoteListItem[];
+}
+
+interface ContextMenuState {
+  x: number;
+  y: number;
+  type: "note" | "dir";
+  path: string;
 }
 
 interface SidebarProps {
@@ -20,6 +27,8 @@ interface SidebarProps {
   onCreateDirectory: () => void;
   onMoveNote: (filename: string, directory: string) => void;
   onMoveDir: (path: string, directory: string) => void;
+  onDeleteNote: (filename: string) => void;
+  onDeleteDir: (path: string) => void;
   open?: boolean;
 }
 
@@ -43,6 +52,7 @@ const Sidebar: Component<SidebarProps> = (props) => {
   const [isDragging, setIsDragging] = createSignal(false);
   const [dragOverDir, setDragOverDir] = createSignal<string | null>(null);
   const [draggingItem, setDraggingItem] = createSignal<{ type: "note" | "dir"; path: string } | null>(null);
+  const [contextMenu, setContextMenu] = createSignal<ContextMenuState | null>(null);
 
   function clearDragState() {
     setIsDragging(false);
@@ -81,6 +91,35 @@ const Sidebar: Component<SidebarProps> = (props) => {
     setCollapsed(next);
     saveCollapsed(next);
   }
+
+  function openContextMenu(e: MouseEvent, type: "note" | "dir", path: string): void {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, type, path });
+  }
+
+  function closeContextMenu(): void {
+    setContextMenu(null);
+  }
+
+  function handleContextMenuDelete(): void {
+    const menu = contextMenu();
+    if (!menu) return;
+    closeContextMenu();
+    if (menu.type === "note") {
+      props.onDeleteNote(menu.path);
+    } else {
+      props.onDeleteDir(menu.path);
+    }
+  }
+
+  onMount(() => {
+    function handleDocClick() {
+      closeContextMenu();
+    }
+    document.addEventListener("click", handleDocClick);
+    onCleanup(() => document.removeEventListener("click", handleDocClick));
+  });
 
   const tree = createMemo(() => {
     const root: DirNode = { name: "", path: "", children: [], notes: [] };
@@ -124,6 +163,7 @@ const Sidebar: Component<SidebarProps> = (props) => {
       <div
         class={`note-item${note.filename === props.currentNote?.filename ? " active" : ""}`}
         onClick={() => props.onOpenNote(note.filename)}
+        onContextMenu={(e) => openContextMenu(e, "note", note.filename)}
         draggable={true}
         onDragStart={(e) => {
           e.dataTransfer!.setData("text/plain", "note:" + note.filename);
@@ -159,6 +199,7 @@ const Sidebar: Component<SidebarProps> = (props) => {
             class="dir-item"
             style={{ "padding-left": `${depth * 0.75}rem` }}
             onClick={() => toggleDir(dir.path)}
+            onContextMenu={(e) => openContextMenu(e, "dir", dir.path)}
             draggable={true}
             onDragStart={(e) => {
               e.stopPropagation();
@@ -220,6 +261,17 @@ const Sidebar: Component<SidebarProps> = (props) => {
           Settings
         </button>
       </div>
+      <Show when={contextMenu() !== null}>
+        <div
+          class="context-menu"
+          style={{ left: `${contextMenu()!.x}px`, top: `${contextMenu()!.y}px` }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button style={{ color: "var(--ink-red)" }} onClick={handleContextMenuDelete}>
+            Delete
+          </button>
+        </div>
+      </Show>
     </div>
   );
 };

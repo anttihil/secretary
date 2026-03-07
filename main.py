@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import re
+import shutil
 import subprocess
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -523,14 +524,22 @@ async def move_directory(path: str, req: MoveNoteRequest):
         validate_note_path(req.directory)
         target_parent = NOTES_DIR / req.directory
         if not target_parent.is_dir():
-            raise HTTPException(status_code=400, detail="Target directory does not exist")
+            raise HTTPException(
+                status_code=400, detail="Target directory does not exist"
+            )
     else:
         target_parent = NOTES_DIR
 
     src_resolved = src.resolve()
     target_parent_resolved = target_parent.resolve()
-    if target_parent_resolved == src_resolved or str(target_parent_resolved).startswith(str(src_resolved) + os.sep):
-        raise HTTPException(status_code=400, detail="Cannot move directory into itself or a descendant")
+    is_self_or_descendant = target_parent_resolved == src_resolved or str(
+        target_parent_resolved
+    ).startswith(str(src_resolved) + os.sep)
+    if is_self_or_descendant:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot move directory into itself or a descendant",
+        )
 
     new_path = target_parent / src.name
     if new_path.resolve() == src_resolved:
@@ -538,13 +547,27 @@ async def move_directory(path: str, req: MoveNoteRequest):
         return {"path": str(src_resolved.relative_to(resolved))}
 
     if new_path.exists():
-        raise HTTPException(status_code=409, detail="A directory with that name already exists in the target")
+        raise HTTPException(
+            status_code=409,
+            detail="A directory with that name already exists in the target",
+        )
 
     src.rename(new_path)
     schedule_git_sync()
 
     resolved = NOTES_DIR.resolve()
     return {"path": str(new_path.resolve().relative_to(resolved))}
+
+
+@app.delete("/api/directories/{path:path}")
+async def delete_directory_endpoint(path: str):
+    validate_note_path(path)
+    dir_path = NOTES_DIR / path
+    if not dir_path.is_dir():
+        raise HTTPException(status_code=404, detail="Directory not found")
+    shutil.rmtree(dir_path)
+    schedule_git_sync()
+    return {"deleted": path}
 
 
 @app.post("/api/directories")
@@ -577,7 +600,10 @@ async def move_note(filename: str, req: MoveNoteRequest):
         return {"filename": filename, "body": body, **metadata}
 
     if new_path.exists():
-        raise HTTPException(status_code=409, detail="A note with that name already exists in the target directory")
+        raise HTTPException(
+            status_code=409,
+            detail="A note with that name already exists in the target directory",
+        )
 
     path.rename(new_path)
     schedule_git_sync()

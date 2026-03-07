@@ -140,6 +140,14 @@ export async function moveNote(filename: string, directory: string): Promise<Not
   return resp.json();
 }
 
+export async function deleteDirectory(path: string): Promise<{ deleted: string }> {
+  const resp = await fetch(`/api/directories/${encodeNotePath(path)}`, {
+    method: "DELETE",
+  });
+  if (!resp.ok) throw new Error("Failed to delete directory");
+  return resp.json();
+}
+
 export async function createDirectory(
   path: string,
 ): Promise<{ path: string }> {

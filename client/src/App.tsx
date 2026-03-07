@@ -5,11 +5,14 @@ import NoteView from "./components/NoteView";
 import NewNoteModal from "./components/NewNoteModal";
 import CleanupModal from "./components/CleanupModal";
 import SettingsModal from "./components/SettingsModal";
+import ConfirmModal from "./components/ConfirmModal";
+import NewDirectoryModal from "./components/NewDirectoryModal";
 import {
   fetchNotes,
   createNote,
   getNote,
   deleteNote,
+  deleteDirectory,
   appendToNote,
   cleanNote,
   replaceNoteBody,
@@ -33,6 +36,10 @@ export default function App() {
   const [showCleanupModal, setShowCleanupModal] = createSignal(false);
   const [cleanedText, setCleanedText] = createSignal("");
   const [showSettingsModal, setShowSettingsModal] = createSignal(false);
+  const [showDirectoryModal, setShowDirectoryModal] = createSignal(false);
+  const [showConfirmModal, setShowConfirmModal] = createSignal(false);
+  const [confirmMessage, setConfirmMessage] = createSignal("");
+  const [confirmAction, setConfirmAction] = createSignal<(() => void) | null>(null);
 
   let ws: WebSocket | undefined;
   let mediaRecorder: MediaRecorder | undefined;
@@ -154,15 +161,46 @@ export default function App() {
     } catch {}
   }
 
+  function openConfirmModal(message: string, action: () => void): void {
+    setConfirmMessage(message);
+    setConfirmAction(() => action);
+    setShowConfirmModal(true);
+  }
+
   async function handleDeleteNote(): Promise<void> {
     const note = currentNote();
     if (!note) return;
-    if (!confirm(`Delete "${note.title}"?`)) return;
-    try {
-      await deleteNote(note.filename);
-      setNotes(notes().filter((n) => n.filename !== note.filename));
-      setCurrentNote(null);
-    } catch {}
+    openConfirmModal(`Delete "${note.title}"?`, async () => {
+      setShowConfirmModal(false);
+      try {
+        await deleteNote(note.filename);
+        setNotes(notes().filter((n) => n.filename !== note.filename));
+        setCurrentNote(null);
+      } catch {}
+    });
+  }
+
+  async function handleDeleteNoteFromSidebar(filename: string): Promise<void> {
+    const note = notes().find((n) => n.filename === filename);
+    const title = note?.title ?? filename;
+    openConfirmModal(`Delete "${title}"?`, async () => {
+      setShowConfirmModal(false);
+      try {
+        await deleteNote(filename);
+        setNotes(notes().filter((n) => n.filename !== filename));
+        if (currentNote()?.filename === filename) setCurrentNote(null);
+      } catch {}
+    });
+  }
+
+  async function handleDeleteDir(path: string): Promise<void> {
+    openConfirmModal(`Delete folder "${path}" and all its contents?`, async () => {
+      setShowConfirmModal(false);
+      try {
+        await deleteDirectory(path);
+        await loadNotes();
+      } catch {}
+    });
   }
 
   function handleBack(): void {
@@ -197,15 +235,14 @@ export default function App() {
     }
   }
 
-  async function handleCreateDirectory(): Promise<void> {
-    const name = prompt("Folder name:");
-    if (!name?.trim()) return;
+  async function handleCreateDirectory(name: string, parentDirectory: string): Promise<void> {
+    const path = parentDirectory ? `${parentDirectory}/${name}` : name;
     try {
-      await createDirectory(name.trim());
+      await createDirectory(path);
       await loadNotes();
+      setShowDirectoryModal(false);
     } catch (e) {
       console.error("Failed to create directory:", e);
-      alert("Failed to create folder.");
     }
   }
 
@@ -280,9 +317,11 @@ export default function App() {
         onNewNote={openNewNoteModal}
         onMigrate={handleMigrate}
         onSettings={() => { setShowSettingsModal(true); setSidebarOpen(false); }}
-        onCreateDirectory={handleCreateDirectory}
+        onCreateDirectory={() => setShowDirectoryModal(true)}
         onMoveNote={handleMoveNote}
         onMoveDir={handleMoveDir}
+        onDeleteNote={handleDeleteNoteFromSidebar}
+        onDeleteDir={handleDeleteDir}
         open={sidebarOpen()}
       />
       <Show when={sidebarOpen()}>
@@ -334,6 +373,20 @@ export default function App() {
       </Show>
       <Show when={showSettingsModal()}>
         <SettingsModal onClose={() => setShowSettingsModal(false)} />
+      </Show>
+      <Show when={showDirectoryModal()}>
+        <NewDirectoryModal
+          onClose={() => setShowDirectoryModal(false)}
+          onCreate={handleCreateDirectory}
+          directories={directories()}
+        />
+      </Show>
+      <Show when={showConfirmModal()}>
+        <ConfirmModal
+          message={confirmMessage()}
+          onConfirm={() => { confirmAction()?.(); }}
+          onClose={() => setShowConfirmModal(false)}
+        />
       </Show>
     </>
   );
