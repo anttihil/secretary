@@ -13,15 +13,18 @@ import {
   cleanNote,
   replaceNoteBody,
   migrateNotes,
+  createDirectory,
 } from "./api";
 
 export default function App() {
   const [notes, setNotes] = createSignal<NoteListItem[]>([]);
+  const [directories, setDirectories] = createSignal<string[]>([]);
   const [currentNote, setCurrentNote] = createSignal<Note | null>(null);
   const [noteResults, setNoteResults] = createSignal<Result[]>([]);
   const [status, setStatus] = createSignal("Connecting...");
   const [isRecording, setIsRecording] = createSignal(false);
   const [showModal, setShowModal] = createSignal(false);
+  const [newNoteDir, setNewNoteDir] = createSignal<string | undefined>(undefined);
   const [sidebarOpen, setSidebarOpen] = createSignal(false);
   const [isCleaning, setIsCleaning] = createSignal(false);
   const [showCleanupModal, setShowCleanupModal] = createSignal(false);
@@ -122,7 +125,9 @@ export default function App() {
 
   async function loadNotes(): Promise<void> {
     try {
-      setNotes(await fetchNotes());
+      const resp = await fetchNotes();
+      setNotes(resp.notes);
+      setDirectories(resp.directories);
     } catch {}
   }
 
@@ -134,9 +139,9 @@ export default function App() {
     } catch {}
   }
 
-  async function handleCreateNote(title: string): Promise<void> {
+  async function handleCreateNote(title: string, directory: string): Promise<void> {
     try {
-      const note = await createNote(title);
+      const note = await createNote(title, directory || undefined);
       const newNote: Note = { ...note, body: "" };
       setNotes([newNote, ...notes()]);
       setCurrentNote(newNote);
@@ -188,6 +193,24 @@ export default function App() {
     }
   }
 
+  async function handleCreateDirectory(): Promise<void> {
+    const name = prompt("Folder name:");
+    if (!name?.trim()) return;
+    try {
+      await createDirectory(name.trim());
+      await loadNotes();
+    } catch (e) {
+      console.error("Failed to create directory:", e);
+      alert("Failed to create folder.");
+    }
+  }
+
+  function openNewNoteModal(directory?: string): void {
+    setNewNoteDir(directory);
+    setShowModal(true);
+    setSidebarOpen(false);
+  }
+
   async function applyCleanup(finalText: string): Promise<void> {
     const note = currentNote();
     if (!note) return;
@@ -220,10 +243,12 @@ export default function App() {
     <>
       <Sidebar
         notes={notes()}
+        directories={directories()}
         currentNote={currentNote()}
         onOpenNote={(f) => { handleOpenNote(f); setSidebarOpen(false); }}
-        onNewNote={() => { setShowModal(true); setSidebarOpen(false); }}
+        onNewNote={openNewNoteModal}
         onMigrate={handleMigrate}
+        onCreateDirectory={handleCreateDirectory}
         open={sidebarOpen()}
       />
       <Show when={sidebarOpen()}>
@@ -261,6 +286,8 @@ export default function App() {
         <NewNoteModal
           onClose={() => setShowModal(false)}
           onCreate={handleCreateNote}
+          directories={directories()}
+          defaultDirectory={newNoteDir()}
         />
       </Show>
       <Show when={showCleanupModal()}>
