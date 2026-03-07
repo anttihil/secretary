@@ -279,6 +279,22 @@ export default function App() {
     setSidebarOpen(false);
   }
 
+  async function handleUpdateNoteBody(newBody: string): Promise<void> {
+    const note = currentNote();
+    if (!note) return;
+    try {
+      const updated = await replaceNoteBody(note.filename, newBody);
+      setCurrentNote(updated);
+      setNotes(
+        notes().map((n) =>
+          n.filename === updated.filename ? { ...n, updated: updated.updated } : n,
+        ),
+      );
+    } catch (e) {
+      console.error("Failed to update note body:", e);
+    }
+  }
+
   async function applyCleanup(finalText: string): Promise<void> {
     const note = currentNote();
     if (!note) return;
@@ -347,11 +363,14 @@ export default function App() {
             status={status()}
             isRecording={isRecording()}
             isCleaning={isCleaning()}
+            notes={notes()}
             onRecord={() => startRecording()}
             onStop={stopRecording}
             onBack={handleBack}
             onDelete={handleDeleteNote}
             onClean={handleCleanNote}
+            onUpdateBody={handleUpdateNoteBody}
+            onOpenNote={handleOpenNote}
           />
         </Show>
       </div>

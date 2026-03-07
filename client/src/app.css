@@ -472,6 +472,17 @@ button:disabled {
   color: var(--ink-placeholder);
 }
 
+/* ── Note links — clickable to navigate ── */
+.note-link {
+  cursor: pointer;
+  color: var(--ink-blue);
+  border-bottom: 1px solid var(--ink-blue);
+  transition: opacity 0.15s;
+}
+.note-link:hover {
+  opacity: 0.7;
+}
+
 /* ── Transcript words — clickable for glossary ── */
 .transcript-word {
   cursor: pointer;
