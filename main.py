@@ -233,7 +233,7 @@ async def list_notes():
         for path in note_files
     ]
 
-    return sorted(note_data, key=lambda n: n["updated"], reverse=True)
+    return sorted(note_data, key=lambda n: n.get("updated", ""), reverse=True)
 
 
 @app.post("/api/notes")
