@@ -120,6 +120,26 @@ export async function appendToNote(filename: string, text: string): Promise<Note
   return resp.json();
 }
 
+export async function moveDirectory(path: string, directory: string): Promise<{ path: string }> {
+  const resp = await fetch(`/api/directories/${encodeNotePath(path)}/move`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ directory }),
+  });
+  if (!resp.ok) throw new Error("Failed to move directory");
+  return resp.json();
+}
+
+export async function moveNote(filename: string, directory: string): Promise<Note> {
+  const resp = await fetch(`/api/notes/${encodeNotePath(filename)}/move`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ directory }),
+  });
+  if (!resp.ok) throw new Error("Failed to move note");
+  return resp.json();
+}
+
 export async function createDirectory(
   path: string,
 ): Promise<{ path: string }> {

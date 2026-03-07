@@ -313,6 +313,10 @@ class AddGlossaryWordRequest(BaseModel):
     correct_word: str
 
 
+class MoveNoteRequest(BaseModel):
+    directory: str = ""
+
+
 @app.get("/api/notes")
 async def list_notes():
     try:
@@ -508,6 +512,41 @@ async def migrate_notes():
     return {"migrated": migrated, "skipped": skipped, "files": files}
 
 
+@app.post("/api/directories/{path:path}/move")
+async def move_directory(path: str, req: MoveNoteRequest):
+    validate_note_path(path)
+    src = NOTES_DIR / path
+    if not src.is_dir():
+        raise HTTPException(status_code=404, detail="Directory not found")
+
+    if req.directory:
+        validate_note_path(req.directory)
+        target_parent = NOTES_DIR / req.directory
+        if not target_parent.is_dir():
+            raise HTTPException(status_code=400, detail="Target directory does not exist")
+    else:
+        target_parent = NOTES_DIR
+
+    src_resolved = src.resolve()
+    target_parent_resolved = target_parent.resolve()
+    if target_parent_resolved == src_resolved or str(target_parent_resolved).startswith(str(src_resolved) + os.sep):
+        raise HTTPException(status_code=400, detail="Cannot move directory into itself or a descendant")
+
+    new_path = target_parent / src.name
+    if new_path.resolve() == src_resolved:
+        resolved = NOTES_DIR.resolve()
+        return {"path": str(src_resolved.relative_to(resolved))}
+
+    if new_path.exists():
+        raise HTTPException(status_code=409, detail="A directory with that name already exists in the target")
+
+    src.rename(new_path)
+    schedule_git_sync()
+
+    resolved = NOTES_DIR.resolve()
+    return {"path": str(new_path.resolve().relative_to(resolved))}
+
+
 @app.post("/api/directories")
 async def create_directory(req: CreateDirectoryRequest):
     validate_note_path(req.path)
@@ -516,6 +555,37 @@ async def create_directory(req: CreateDirectoryRequest):
     (dir_path / ".gitkeep").touch()
     schedule_git_sync()
     return {"path": req.path}
+
+
+@app.post("/api/notes/{filename:path}/move")
+async def move_note(filename: str, req: MoveNoteRequest):
+    path = validate_note_path(filename)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    if req.directory:
+        validate_note_path(req.directory)
+        target_dir = NOTES_DIR / req.directory
+        if not target_dir.is_dir():
+            raise HTTPException(status_code=400, detail="Directory does not exist")
+    else:
+        target_dir = NOTES_DIR
+
+    new_path = target_dir / path.name
+    if new_path == path:
+        metadata, body = parse_frontmatter(path.read_text())
+        return {"filename": filename, "body": body, **metadata}
+
+    if new_path.exists():
+        raise HTTPException(status_code=409, detail="A note with that name already exists in the target directory")
+
+    path.rename(new_path)
+    schedule_git_sync()
+
+    resolved = NOTES_DIR.resolve()
+    new_filename = str(new_path.resolve().relative_to(resolved))
+    metadata, body = parse_frontmatter(new_path.read_text())
+    return {"filename": new_filename, "body": body, **metadata}
 
 
 @app.delete("/api/notes/{filename:path}")

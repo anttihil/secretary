@@ -253,6 +253,11 @@ button:disabled {
 .dir-item:hover {
   background: rgba(180,160,120,0.12);
 }
+.dir-drop-zone.drag-over {
+  background: rgba(44,74,124,0.07);
+  outline: 1px dashed var(--ink-blue);
+  outline-offset: -2px;
+}
 
 .dir-toggle {
   font-size: 0.7rem;
@@ -270,6 +275,19 @@ button:disabled {
   color: var(--ink-secondary);
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.root-drop-zone {
+  min-height: 0.25rem;
+  transition: background 0.1s;
+}
+.root-drop-zone.dragging {
+  min-height: 2rem;
+}
+.root-drop-zone.drag-over {
+  background: rgba(44,74,124,0.07);
+  outline: 1px dashed var(--ink-blue);
+  outline-offset: -2px;
 }
 
 .note-item {

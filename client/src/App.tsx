@@ -15,6 +15,8 @@ import {
   replaceNoteBody,
   migrateNotes,
   createDirectory,
+  moveNote,
+  moveDirectory,
 } from "./api";
 
 export default function App() {
@@ -207,6 +209,33 @@ export default function App() {
     }
   }
 
+  async function handleMoveDir(path: string, targetDirectory: string): Promise<void> {
+    const currentParent = path.includes("/") ? path.substring(0, path.lastIndexOf("/")) : "";
+    if (currentParent === targetDirectory) return;
+    try {
+      await moveDirectory(path, targetDirectory);
+      await loadNotes();
+    } catch (e) {
+      console.error("Failed to move directory:", e);
+    }
+  }
+
+  async function handleMoveNote(filename: string, directory: string): Promise<void> {
+    const note = notes().find((n) => n.filename === filename);
+    if (!note) return;
+    const currentDir = filename.includes("/") ? filename.substring(0, filename.lastIndexOf("/")) : "";
+    if (currentDir === directory) return;
+    try {
+      const moved = await moveNote(filename, directory);
+      setNotes(notes().map((n) => n.filename === filename ? { ...n, filename: moved.filename, updated: moved.updated } : n));
+      if (currentNote()?.filename === filename) {
+        setCurrentNote({ ...currentNote()!, filename: moved.filename });
+      }
+    } catch (e) {
+      console.error("Failed to move note:", e);
+    }
+  }
+
   function openNewNoteModal(directory?: string): void {
     setNewNoteDir(directory);
     setShowModal(true);
@@ -252,6 +281,8 @@ export default function App() {
         onMigrate={handleMigrate}
         onSettings={() => { setShowSettingsModal(true); setSidebarOpen(false); }}
         onCreateDirectory={handleCreateDirectory}
+        onMoveNote={handleMoveNote}
+        onMoveDir={handleMoveDir}
         open={sidebarOpen()}
       />
       <Show when={sidebarOpen()}>
