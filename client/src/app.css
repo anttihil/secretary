@@ -441,10 +441,11 @@ button:disabled {
       transparent calc(2rem + 1px)
     ),
     repeating-linear-gradient(0deg,
-      transparent, transparent 27px,
-      rgba(100,120,160,0.12) 27px, rgba(100,120,160,0.12) 28px
+      transparent, transparent calc(1lh - 1px),
+      rgba(100,120,160,0.12) calc(1lh - 1px), rgba(100,120,160,0.12) 1lh
     );
   background-color: var(--paper-card);
+  background-position: 0 1.25rem;
   border: 1px solid var(--border-light);
   padding: 1.25rem 1.25rem 1.25rem 2.5rem;
   white-space: pre-wrap;
@@ -738,9 +739,10 @@ button:disabled {
         transparent calc(1.5rem + 1px)
       ),
       repeating-linear-gradient(0deg,
-        transparent, transparent 27px,
-        rgba(100,120,160,0.12) 27px, rgba(100,120,160,0.12) 28px
+        transparent, transparent calc(1lh - 1px),
+        rgba(100,120,160,0.12) calc(1lh - 1px), rgba(100,120,160,0.12) 1lh
       );
+    background-position: 0 1rem;
     padding: 1rem 1rem 1rem 2rem;
   }
 
