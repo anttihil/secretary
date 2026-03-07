@@ -8,6 +8,12 @@ from faster_whisper import WhisperModel
 from llama_cpp import ChatCompletionRequestMessage, Llama
 
 
+def get_whisper_capabilities() -> dict:
+    import ctranslate2
+
+    return {"cuda_available": ctranslate2.get_cuda_device_count() > 0}
+
+
 def _detect_audio_format(audio_data: bytes) -> str:
     """Detect audio format from magic bytes.
 
@@ -56,16 +62,33 @@ class LocalAIClient(AIClient):
         whisper_model: str = "base.en",
         glossary_path: Path | None = None,
     ):
-        whisper_device = os.environ.get("WHISPER_DEVICE", "cpu")
-        whisper_compute_type = os.environ.get("WHISPER_COMPUTE_TYPE", "auto")
+        self.whisper_device = os.environ.get("WHISPER_DEVICE", "cpu")
+        self.whisper_compute_type = os.environ.get("WHISPER_COMPUTE_TYPE", "auto")
+        self.whisper_model = whisper_model
         llm_gpu_layers = int(os.environ.get("LLM_GPU_LAYERS", "0"))
 
         self.whisper = WhisperModel(
-            whisper_model, device=whisper_device, compute_type=whisper_compute_type
+            whisper_model,
+            device=self.whisper_device,
+            compute_type=self.whisper_compute_type,
         )
         self.llm = Llama(model_path=model_path, n_gpu_layers=llm_gpu_layers, n_ctx=2048)
         self.glossary_path = glossary_path or Path("glossary.txt")
         self.glossary = _load_glossary(self.glossary_path)
+
+    def get_current_whisper_settings(self) -> dict[str, str]:
+        return {
+            "whisper_device": self.whisper_device,
+            "whisper_compute_type": self.whisper_compute_type,
+            "whisper_model": self.whisper_model,
+        }
+
+    def update_whisper(self, device: str, compute_type: str, model: str) -> None:
+        new_whisper = WhisperModel(model, device=device, compute_type=compute_type)
+        self.whisper = new_whisper
+        self.whisper_device = device
+        self.whisper_compute_type = compute_type
+        self.whisper_model = model
 
     def reload_glossary(self):
         self.glossary = _load_glossary(self.glossary_path)
@@ -75,7 +98,7 @@ class LocalAIClient(AIClient):
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
             f.write(audio_data)
             f.flush()
-            segments, _ = self.whisper.transcribe(f.name)
+            segments, _ = self.whisper.transcribe(f.name, vad_filter=True)
             return " ".join(segment.text.strip() for segment in segments)
 
     def text_prompt(self, prompt: str, system: str | None = None) -> str:

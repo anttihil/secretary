@@ -191,9 +191,13 @@ button:disabled {
 .sidebar-footer {
   padding: 0.6rem 1rem;
   border-top: 1px solid var(--border-light);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
-.btn-migrate {
+.btn-migrate,
+.btn-settings {
   font-size: 0.7rem;
   color: var(--ink-secondary);
   background: none;
@@ -204,8 +208,16 @@ button:disabled {
   cursor: pointer;
   text-decoration: underline;
 }
-.btn-migrate:hover {
+.btn-migrate:hover,
+.btn-settings:hover {
   opacity: 1;
+  box-shadow: none;
+  transform: none;
+}
+.btn-settings:active,
+.btn-migrate:active {
+  box-shadow: none;
+  transform: none;
 }
 
 .no-notes {
@@ -556,6 +568,36 @@ button:disabled {
   justify-content: flex-end;
   padding: 0.75rem 1.5rem 1.25rem;
   border-top: 1px solid var(--border-light);
+}
+
+/* ── Settings ── */
+.settings-select {
+  flex: 1;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border-manila);
+  background: var(--paper-card);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  color: var(--ink-primary);
+  cursor: pointer;
+}
+.settings-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-error {
+  color: var(--ink-red);
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+  font-style: italic;
+}
+
+.settings-loading-text {
+  color: var(--ink-faded);
+  font-style: italic;
+  text-align: center;
+  padding: 1rem 0;
 }
 
 /* ── Clean up button ── */

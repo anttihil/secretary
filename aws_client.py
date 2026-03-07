@@ -61,9 +61,7 @@ class AWSAIClient(AIClient):
             time.sleep(1)
 
         # Get transcript from result URL
-        transcript_uri = response["TranscriptionJob"]["Transcript"][
-            "TranscriptFileUri"
-        ]
+        transcript_uri = response["TranscriptionJob"]["Transcript"]["TranscriptFileUri"]
 
         # Fetch transcript JSON from the URI
         import urllib.request

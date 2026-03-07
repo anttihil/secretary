@@ -4,6 +4,7 @@ import Sidebar from "./components/Sidebar";
 import NoteView from "./components/NoteView";
 import NewNoteModal from "./components/NewNoteModal";
 import CleanupModal from "./components/CleanupModal";
+import SettingsModal from "./components/SettingsModal";
 import {
   fetchNotes,
   createNote,
@@ -26,6 +27,7 @@ export default function App() {
   const [isCleaning, setIsCleaning] = createSignal(false);
   const [showCleanupModal, setShowCleanupModal] = createSignal(false);
   const [cleanedText, setCleanedText] = createSignal("");
+  const [showSettingsModal, setShowSettingsModal] = createSignal(false);
 
   let ws: WebSocket | undefined;
   let mediaRecorder: MediaRecorder | undefined;
@@ -224,6 +226,7 @@ export default function App() {
         onOpenNote={(f) => { handleOpenNote(f); setSidebarOpen(false); }}
         onNewNote={() => { setShowModal(true); setSidebarOpen(false); }}
         onMigrate={handleMigrate}
+        onSettings={() => { setShowSettingsModal(true); setSidebarOpen(false); }}
         open={sidebarOpen()}
       />
       <Show when={sidebarOpen()}>
@@ -270,6 +273,9 @@ export default function App() {
           onApply={applyCleanup}
           onClose={() => setShowCleanupModal(false)}
         />
+      </Show>
+      <Show when={showSettingsModal()}>
+        <SettingsModal onClose={() => setShowSettingsModal(false)} />
       </Show>
     </>
   );

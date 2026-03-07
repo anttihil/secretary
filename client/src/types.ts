@@ -15,6 +15,13 @@ export interface Result {
   time: string;
 }
 
+export interface Settings {
+  whisper_device: string;
+  whisper_compute_type: string;
+  whisper_model: string;
+  cuda_available: boolean;
+}
+
 export interface WsMessage {
   status: "queued" | "complete" | "error";
   job_id?: string;

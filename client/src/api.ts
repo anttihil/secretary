@@ -1,4 +1,4 @@
-import type { Note, NoteListItem } from "./types";
+import type { Note, NoteListItem, Settings } from "./types";
 
 export async function fetchNotes(): Promise<NoteListItem[]> {
   const resp = await fetch("/api/notes");
@@ -72,6 +72,27 @@ export async function migrateNotes(): Promise<{
 }> {
   const resp = await fetch("/api/notes/migrate", { method: "POST" });
   if (!resp.ok) throw new Error("Migration failed");
+  return resp.json();
+}
+
+export async function fetchSettings(): Promise<Settings> {
+  const resp = await fetch("/api/settings");
+  if (!resp.ok) throw new Error("Failed to fetch settings");
+  return resp.json();
+}
+
+export async function saveSettings(
+  settings: Omit<Settings, "cuda_available">,
+): Promise<Settings> {
+  const resp = await fetch("/api/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: "Unknown error" }));
+    throw new Error(err.detail || "Failed to save settings");
+  }
   return resp.json();
 }
 

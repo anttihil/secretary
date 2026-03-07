@@ -14,7 +14,8 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from ai_client import AIClient, LocalAIClient
+from ai_client import AIClient, LocalAIClient, get_whisper_capabilities
+from config import get_settings, save_settings
 
 # Load .env file for local development; in production, systemd provides env vars
 if os.getenv("ENVIRONMENT") != "production":
@@ -125,14 +126,13 @@ def format_frontmatter(metadata: dict[str, str], body: str) -> str:
 
 def create_ai_client() -> AIClient:
     client = os.environ.get("AI_CLIENT", "local")
+    settings = get_settings()
     match client:
         case "local":
             model_path = os.environ["LLM_MODEL_PATH"]
-            whisper_model = os.environ.get("WHISPER_MODEL", "base.en")
-            return LocalAIClient(model_path, whisper_model, GLOSSARY_PATH)
-        # case "aws":
-        #    bucket = os.environ["S3_BUCKET"]
-        #    return AWSAIClient(local_path=".", s3_bucket=bucket)
+            os.environ["WHISPER_DEVICE"] = settings["whisper_device"]
+            os.environ["WHISPER_COMPUTE_TYPE"] = settings["whisper_compute_type"]
+            return LocalAIClient(model_path, settings["whisper_model"], GLOSSARY_PATH)
         case _:
             raise ValueError("Unknown client type")
 
@@ -233,6 +233,49 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/api/queue")
 async def queue_status():
     return {"total": job_queue.qsize() + (1 if worker_busy else 0)}
+
+
+# --- Settings API ---
+
+
+class UpdateSettingsRequest(BaseModel):
+    whisper_device: str
+    whisper_compute_type: str
+    whisper_model: str
+
+
+@app.get("/api/settings")
+async def get_settings_endpoint():
+    capabilities = get_whisper_capabilities()
+    if isinstance(ai_client, LocalAIClient):
+        current = ai_client.get_current_whisper_settings()
+    else:
+        current = get_settings()
+    return {**current, **capabilities}
+
+
+@app.post("/api/settings")
+async def update_settings_endpoint(req: UpdateSettingsRequest):
+    if worker_busy:
+        raise HTTPException(
+            status_code=409, detail="Cannot update settings while processing audio"
+        )
+    if not isinstance(ai_client, LocalAIClient):
+        raise HTTPException(status_code=400, detail="Settings only for local client")
+    try:
+        ai_client.update_whisper(
+            req.whisper_device, req.whisper_compute_type, req.whisper_model
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to reinit whisper: {e}")
+    new_settings = {
+        "whisper_device": req.whisper_device,
+        "whisper_compute_type": req.whisper_compute_type,
+        "whisper_model": req.whisper_model,
+    }
+    save_settings(new_settings)
+    capabilities = get_whisper_capabilities()
+    return {**new_settings, **capabilities}
 
 
 # --- Notes REST API ---
@@ -440,6 +483,7 @@ async def delete_note(filename: str):
 
 
 # --- Glossary API ---
+
 
 @app.get("/api/glossary")
 async def get_glossary():
