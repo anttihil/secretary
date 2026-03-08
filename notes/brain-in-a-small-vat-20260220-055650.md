@@ -1,7 +1,7 @@
 ---
-title: Brain in a vat
+title: Brain in a small vat
 created: 2026-02-20T05:56:50
-updated: 2026-02-20T05:58:08
+updated: 2026-03-08T00:05:06
 ---
 
 How do we know we are in the brains of a bat?
