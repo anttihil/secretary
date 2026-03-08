@@ -349,7 +349,7 @@ async def list_notes():
         if d.is_dir() and not any(part.startswith(".") for part in d.relative_to(NOTES_DIR).parts)
     )
 
-    notes = sorted(note_data, key=lambda n: n.get("updated", ""), reverse=True)
+    notes = sorted(note_data, key=lambda n: n.get("updated") or n.get("created") or "", reverse=True)
     return {"notes": notes, "directories": directories}
 
 

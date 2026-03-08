@@ -47,6 +47,22 @@ function saveCollapsed(set: Set<string>): void {
   localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...set]));
 }
 
+function formatNoteDate(updated: string, created: string): string {
+  const raw = updated || created;
+  if (!raw) return "";
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  const now = new Date();
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const day = d.getDate();
+  const month = months[d.getMonth()];
+  const year = d.getFullYear();
+  if (year === now.getFullYear()) {
+    return `${day} ${month}`;
+  }
+  return `${day} ${month} ${year}`;
+}
+
 const Sidebar: Component<SidebarProps> = (props) => {
   const [collapsed, setCollapsed] = createSignal(loadCollapsed());
   const [isDragging, setIsDragging] = createSignal(false);
@@ -174,7 +190,7 @@ const Sidebar: Component<SidebarProps> = (props) => {
         onDragEnd={clearDragState}
       >
         <div class="note-item-title">{note.title || "Untitled"}</div>
-        <div class="note-item-date">{note.updated}</div>
+        <div class="note-item-date">{formatNoteDate(note.updated, note.created)}</div>
       </div>
     );
   }
