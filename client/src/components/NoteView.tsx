@@ -6,6 +6,7 @@ import GlossaryModal from "./GlossaryModal";
 import InsertTagModal from "./InsertTagModal";
 import InsertNoteLinkModal from "./InsertNoteLinkModal";
 import StatusBar from "./StatusBar";
+import EditableTitle from "./EditableTitle";
 
 interface NoteViewProps {
   note: Note | null;
@@ -48,40 +49,11 @@ function tokenizeBody(body: string): Token[] {
 }
 
 const NoteView: Component<NoteViewProps> = (props) => {
-  const [isEditingTitle, setIsEditingTitle] = createSignal(false);
-  const [editTitle, setEditTitle] = createSignal("");
   const [selectedWord, setSelectedWord] = createSignal<string | null>(null);
   const [clickedPartIndex, setClickedPartIndex] = createSignal<number>(0);
   const [contextMenuPos, setContextMenuPos] = createSignal<{ x: number; y: number } | null>(null);
   const [insertMode, setInsertMode] = createSignal<"tag" | "notelink" | null>(null);
   const [contextMenuTokenType, setContextMenuTokenType] = createSignal<Token["type"] | "empty">("empty");
-
-  createEffect(() => {
-    props.note;
-    setIsEditingTitle(false);
-  });
-
-  function startEditing(): void {
-    setEditTitle(props.note?.title ?? "");
-    setIsEditingTitle(true);
-  }
-
-  async function submitTitle(): Promise<void> {
-    const trimmed = editTitle().trim();
-    if (trimmed && trimmed !== props.note?.title) {
-      await props.onRenameNote(trimmed);
-    }
-    setIsEditingTitle(false);
-  }
-
-  function handleTitleKeyDown(e: KeyboardEvent): void {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      void submitTitle();
-    } else if (e.key === "Escape") {
-      setIsEditingTitle(false);
-    }
-  }
 
   function closeContextMenu(): void {
     setContextMenuPos(null);
@@ -131,51 +103,37 @@ const NoteView: Component<NoteViewProps> = (props) => {
   return (
     <>
       <div class="note-view">
+        <div class="note-content">
         <div class="note-header">
-          <button class="btn-back" onClick={props.onBack}>
-            ←
-          </button>
-          <Show
-            when={isEditingTitle()}
-            fallback={
-              <h1 class="note-title" onClick={startEditing}>{props.note?.title}</h1>
-            }
-          >
-            <input
-              class="note-title-input"
-              value={editTitle()}
-              onInput={(e) => setEditTitle(e.currentTarget.value)}
-              onKeyDown={handleTitleKeyDown}
-              onBlur={() => void submitTitle()}
-              autofocus
-            />
-          </Show>
-          <button class="btn-delete" onClick={props.onDelete}>
-            Delete
-          </button>
-        </div>
-        <div class="note-controls">
-          <Show
-            when={!props.isRecording}
-            fallback={
-              <button class="btn-stop" onClick={props.onStop}>
-                Stop
+          <EditableTitle
+            title={props.note?.title ?? ""}
+            onRename={props.onRenameNote}
+            displayClass="note-title"
+            inputClass="note-title-input"
+          />
+          <div class="note-header-actions">
+            <Show
+              when={!props.isRecording}
+              fallback={
+                <button class="btn-stop" onClick={props.onStop}>
+                  Stop
+                </button>
+              }
+            >
+              <button class="btn-record" onClick={props.onRecord}>
+                Record
               </button>
-            }
-          >
-            <button class="btn-record" onClick={props.onRecord}>
-              Record
+            </Show>
+            <button
+              class="btn-clean"
+              onClick={props.onClean}
+              disabled={props.isRecording || props.isCleaning || !props.note?.body?.trim()}
+            >
+              {props.isCleaning ? "Cleaning..." : "Clean up"}
             </button>
-          </Show>
-          <button
-            class="btn-clean"
-            onClick={props.onClean}
-            disabled={props.isRecording || props.isCleaning || !props.note?.body?.trim()}
-          >
-            {props.isCleaning ? "Cleaning..." : "Clean up"}
-          </button>
+            <StatusBar status={props.status} isRecording={props.isRecording} />
+          </div>
         </div>
-        <StatusBar status={props.status} isRecording={props.isRecording} />
         <div
           class={`note-body${!props.note?.body?.trim() ? " note-body-empty" : ""}`}
           on:contextmenu={(e: MouseEvent) => {
@@ -245,6 +203,7 @@ const NoteView: Component<NoteViewProps> = (props) => {
               }}
             </For>
           </Show>
+        </div>
         </div>
       </div>
       <Show when={contextMenuPos() !== null}>

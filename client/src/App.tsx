@@ -7,6 +7,7 @@ import CleanupModal from "./components/CleanupModal";
 import SettingsModal from "./components/SettingsModal";
 import ConfirmModal from "./components/ConfirmModal";
 import NewDirectoryModal from "./components/NewDirectoryModal";
+import EditableTitle from "./components/EditableTitle";
 import {
   fetchNotes,
   createNote,
@@ -397,7 +398,40 @@ export default function App() {
           <button class="btn-menu" onClick={() => setSidebarOpen(true)}>
             ≡
           </button>
+          <Show when={currentNote()}>
+            <EditableTitle
+              title={currentNote()!.title}
+              onRename={handleRenameNote}
+              displayClass="mobile-topbar-title"
+              inputClass="mobile-topbar-title-input"
+            />
+          </Show>
         </div>
+        <Show when={currentNote()}>
+          <div class="mobile-status-strip">
+            <Show
+              when={!isRecording()}
+              fallback={
+                <button class="btn-stop" onClick={stopRecording}>
+                  Stop
+                </button>
+              }
+            >
+              <button class="btn-record" onClick={() => startRecording()}>
+                Record
+              </button>
+            </Show>
+            <button
+              class="btn-clean"
+              onClick={handleCleanNote}
+              disabled={isRecording() || isCleaning() || !currentNote()?.body?.trim()}
+            >
+              {isCleaning() ? "..." : "Clean"}
+            </button>
+            <span class={`recording-dot${isRecording() ? " active" : ""}`} />
+            <span class="mobile-status-text">{status()}</span>
+          </div>
+        </Show>
         <Show
           when={currentNote()}
           fallback={

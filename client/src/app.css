@@ -449,6 +449,16 @@ button:disabled {
   100% { background: transparent; }
 }
 
+/* ── Note content — constrained width ── */
+.note-content {
+  max-width: 1000px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
 /* ── Note view ── */
 .note-header {
   display: flex;
@@ -458,15 +468,28 @@ button:disabled {
   border-bottom: 1px solid var(--border-rule);
   padding-bottom: 0.75rem;
 }
-.note-header h1 {
-  flex: 1;
-  font-family: var(--font-display);
-  color: var(--ink-primary);
-  font-size: 1.35rem;
-  letter-spacing: 0.05em;
+
+.note-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.note-header-actions button {
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
+}
+.note-header-actions .status {
+  margin-bottom: 0;
+  font-size: 0.82rem;
+  white-space: nowrap;
 }
 
 .note-title {
+  flex: 1;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  letter-spacing: 0.05em;
+  color: var(--ink-primary);
   cursor: text;
 }
 .note-title:hover {
@@ -778,6 +801,41 @@ button:disabled {
   display: none;
 }
 
+.mobile-topbar-title {
+  flex: 1;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  color: var(--ink-primary);
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 0.35rem;
+  cursor: text;
+}
+.mobile-topbar-title:hover {
+  opacity: 0.75;
+}
+
+.mobile-topbar-title-input {
+  flex: 1;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-primary);
+  background: transparent;
+  border: none;
+  border-bottom: 1.5px solid var(--border-rule);
+  outline: none;
+  padding: 0 0.35rem;
+  min-width: 0;
+}
+
+/* Mobile status strip — hidden on desktop */
+.mobile-status-strip {
+  display: none;
+}
+
 @media (max-width: 768px) {
   /* Sidebar: slide-in drawer */
   .sidebar {
@@ -806,9 +864,55 @@ button:disabled {
   .mobile-topbar {
     display: flex;
     align-items: center;
-    padding: 0.4rem 0.75rem;
+    gap: 0.2rem;
+    padding: 0.3rem 0.5rem;
     border-bottom: 1px solid var(--border-manila);
     flex-shrink: 0;
+    min-height: 48px;
+  }
+
+  /* Compact buttons inside the topbar */
+  .mobile-topbar button {
+    min-height: 36px;
+    padding: 0.3rem 0.65rem;
+    font-size: 0.8rem;
+  }
+
+  .btn-menu {
+    min-width: 45px;
+    min-height: 45px;
+    font-size: 1.4rem;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* Mobile action + status strip */
+  .mobile-status-strip {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.5rem;
+    border-bottom: 1px solid var(--border-light);
+    flex-shrink: 0;
+  }
+  .mobile-status-strip button {
+    min-height: 36px;
+    padding: 0.3rem 0.65rem;
+    font-size: 0.8rem;
+  }
+  .mobile-status-text {
+    font-size: 0.8rem;
+    color: var(--ink-faded);
+    font-style: italic;
+    margin-left: 0.15rem;
+  }
+
+  /* Hide desktop note-header on mobile (title/actions live in topbar) */
+  .note-header {
+    display: none;
   }
 
   /* Reduce padding on views */
@@ -823,12 +927,6 @@ button:disabled {
   }
   .letterhead-subtitle {
     margin-bottom: 1rem;
-  }
-
-  /* Note header: compact */
-  .note-header {
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
   }
 
   /* Note body: adjust red-line to match reduced padding */
@@ -847,7 +945,7 @@ button:disabled {
     padding: 1rem 1rem 1rem 2rem;
   }
 
-  /* Touch-friendly tap targets */
+  /* Touch-friendly tap targets (non-topbar) */
   button {
     min-height: 44px;
   }
