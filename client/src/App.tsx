@@ -1,5 +1,5 @@
 import { createSignal, onMount, onCleanup, Show } from "solid-js";
-import type { Note, NoteListItem, Result, WsMessage } from "./types";
+import type { Note, NoteListItem, WsMessage } from "./types";
 import Sidebar from "./components/Sidebar";
 import NoteView from "./components/NoteView";
 import NewNoteModal from "./components/NewNoteModal";
@@ -27,11 +27,12 @@ export default function App() {
   const [notes, setNotes] = createSignal<NoteListItem[]>([]);
   const [directories, setDirectories] = createSignal<string[]>([]);
   const [currentNote, setCurrentNote] = createSignal<Note | null>(null);
-  const [noteResults, setNoteResults] = createSignal<Result[]>([]);
   const [status, setStatus] = createSignal("Connecting...");
   const [isRecording, setIsRecording] = createSignal(false);
   const [showModal, setShowModal] = createSignal(false);
-  const [newNoteDir, setNewNoteDir] = createSignal<string | undefined>(undefined);
+  const [newNoteDir, setNewNoteDir] = createSignal<string | undefined>(
+    undefined,
+  );
   const [sidebarOpen, setSidebarOpen] = createSignal(false);
   const [isCleaning, setIsCleaning] = createSignal(false);
   const [showCleanupModal, setShowCleanupModal] = createSignal(false);
@@ -40,7 +41,9 @@ export default function App() {
   const [showDirectoryModal, setShowDirectoryModal] = createSignal(false);
   const [showConfirmModal, setShowConfirmModal] = createSignal(false);
   const [confirmMessage, setConfirmMessage] = createSignal("");
-  const [confirmAction, setConfirmAction] = createSignal<(() => void) | null>(null);
+  const [confirmAction, setConfirmAction] = createSignal<(() => void) | null>(
+    null,
+  );
 
   let ws: WebSocket | undefined;
   let mediaRecorder: MediaRecorder | undefined;
@@ -82,14 +85,6 @@ export default function App() {
                 ),
               );
               setCurrentNote(updated);
-              setNoteResults([
-                {
-                  transcript: null,
-                  result: parsed.result ?? "",
-                  time: new Date().toLocaleTimeString(),
-                },
-                ...noteResults(),
-              ]);
             }
             setStatus("Ready");
             setIsRecording(false);
@@ -147,17 +142,18 @@ export default function App() {
     try {
       const note = await getNote(filename);
       setCurrentNote(note);
-      setNoteResults([]);
     } catch {}
   }
 
-  async function handleCreateNote(title: string, directory: string): Promise<void> {
+  async function handleCreateNote(
+    title: string,
+    directory: string,
+  ): Promise<void> {
     try {
       const note = await createNote(title, directory || undefined);
       const newNote: Note = { ...note, body: "" };
       setNotes([newNote, ...notes()]);
       setCurrentNote(newNote);
-      setNoteResults([]);
       setShowModal(false);
     } catch {}
   }
@@ -195,18 +191,20 @@ export default function App() {
   }
 
   async function handleDeleteDir(path: string): Promise<void> {
-    openConfirmModal(`Delete folder "${path}" and all its contents?`, async () => {
-      setShowConfirmModal(false);
-      try {
-        await deleteDirectory(path);
-        await loadNotes();
-      } catch {}
-    });
+    openConfirmModal(
+      `Delete folder "${path}" and all its contents?`,
+      async () => {
+        setShowConfirmModal(false);
+        try {
+          await deleteDirectory(path);
+          await loadNotes();
+        } catch {}
+      },
+    );
   }
 
   function handleBack(): void {
     setCurrentNote(null);
-    setNoteResults([]);
   }
 
   async function handleCleanNote(): Promise<void> {
@@ -236,7 +234,10 @@ export default function App() {
     }
   }
 
-  async function handleCreateDirectory(name: string, parentDirectory: string): Promise<void> {
+  async function handleCreateDirectory(
+    name: string,
+    parentDirectory: string,
+  ): Promise<void> {
     const path = parentDirectory ? `${parentDirectory}/${name}` : name;
     try {
       await createDirectory(path);
@@ -247,8 +248,13 @@ export default function App() {
     }
   }
 
-  async function handleMoveDir(path: string, targetDirectory: string): Promise<void> {
-    const currentParent = path.includes("/") ? path.substring(0, path.lastIndexOf("/")) : "";
+  async function handleMoveDir(
+    path: string,
+    targetDirectory: string,
+  ): Promise<void> {
+    const currentParent = path.includes("/")
+      ? path.substring(0, path.lastIndexOf("/"))
+      : "";
     if (currentParent === targetDirectory) return;
     try {
       await moveDirectory(path, targetDirectory);
@@ -258,14 +264,25 @@ export default function App() {
     }
   }
 
-  async function handleMoveNote(filename: string, directory: string): Promise<void> {
+  async function handleMoveNote(
+    filename: string,
+    directory: string,
+  ): Promise<void> {
     const note = notes().find((n) => n.filename === filename);
     if (!note) return;
-    const currentDir = filename.includes("/") ? filename.substring(0, filename.lastIndexOf("/")) : "";
+    const currentDir = filename.includes("/")
+      ? filename.substring(0, filename.lastIndexOf("/"))
+      : "";
     if (currentDir === directory) return;
     try {
       const moved = await moveNote(filename, directory);
-      setNotes(notes().map((n) => n.filename === filename ? { ...n, filename: moved.filename, updated: moved.updated } : n));
+      setNotes(
+        notes().map((n) =>
+          n.filename === filename
+            ? { ...n, filename: moved.filename, updated: moved.updated }
+            : n,
+        ),
+      );
       if (currentNote()?.filename === filename) {
         setCurrentNote({ ...currentNote()!, filename: moved.filename });
       }
@@ -288,7 +305,9 @@ export default function App() {
       setCurrentNote(updated);
       setNotes(
         notes().map((n) =>
-          n.filename === updated.filename ? { ...n, updated: updated.updated } : n,
+          n.filename === updated.filename
+            ? { ...n, updated: updated.updated }
+            : n,
         ),
       );
     } catch (e) {
@@ -302,11 +321,18 @@ export default function App() {
     try {
       const updated = await renameNote(note.filename, newTitle);
       setCurrentNote(updated);
-      setNotes(notes().map((n) =>
-        n.filename === note.filename
-          ? { ...n, filename: updated.filename, title: updated.title, updated: updated.updated }
-          : n
-      ));
+      setNotes(
+        notes().map((n) =>
+          n.filename === note.filename
+            ? {
+                ...n,
+                filename: updated.filename,
+                title: updated.title,
+                updated: updated.updated,
+              }
+            : n,
+        ),
+      );
     } catch (e) {
       console.error("Failed to rename note:", e);
     }
@@ -346,10 +372,16 @@ export default function App() {
         notes={notes()}
         directories={directories()}
         currentNote={currentNote()}
-        onOpenNote={(f) => { handleOpenNote(f); setSidebarOpen(false); }}
+        onOpenNote={(f) => {
+          handleOpenNote(f);
+          setSidebarOpen(false);
+        }}
         onNewNote={openNewNoteModal}
         onMigrate={handleMigrate}
-        onSettings={() => { setShowSettingsModal(true); setSidebarOpen(false); }}
+        onSettings={() => {
+          setShowSettingsModal(true);
+          setSidebarOpen(false);
+        }}
         onCreateDirectory={() => setShowDirectoryModal(true)}
         onMoveNote={handleMoveNote}
         onMoveDir={handleMoveDir}
@@ -362,21 +394,26 @@ export default function App() {
       </Show>
       <div class="main-panel">
         <div class="mobile-topbar">
-          <button class="btn-menu" onClick={() => setSidebarOpen(true)}>≡</button>
+          <button class="btn-menu" onClick={() => setSidebarOpen(true)}>
+            ≡
+          </button>
         </div>
         <Show
           when={currentNote()}
           fallback={
             <div class="welcome-view">
               <h1>Secretary</h1>
-              <p class="letterhead-subtitle">Voice-Powered Correspondence System</p>
-              <p class="welcome-hint">Select a note or create a new one to get started.</p>
+              <p class="letterhead-subtitle">
+                Voice-Powered Correspondence System
+              </p>
+              <p class="welcome-hint">
+                Select a note or create a new one to get started.
+              </p>
             </div>
           }
         >
           <NoteView
             note={currentNote()}
-            results={noteResults()}
             status={status()}
             isRecording={isRecording()}
             isCleaning={isCleaning()}
@@ -421,7 +458,9 @@ export default function App() {
       <Show when={showConfirmModal()}>
         <ConfirmModal
           message={confirmMessage()}
-          onConfirm={() => { confirmAction()?.(); }}
+          onConfirm={() => {
+            confirmAction()?.();
+          }}
           onClose={() => setShowConfirmModal(false)}
         />
       </Show>

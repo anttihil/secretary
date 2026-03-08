@@ -408,69 +408,7 @@ button:disabled {
   50%       { opacity: 0.5; transform: scale(0.85); }
 }
 
-/* ── Results — legal pad style ── */
-.results {
-  border-top: 2px solid var(--border-rule);
-  padding-top: 1rem;
-  flex: 1;
-  overflow-y: auto;
-}
 
-.result-item {
-  background: transparent;
-  border-left: 2px solid var(--ink-red);
-  border-bottom: 1px solid var(--border-light);
-  border-radius: 0;
-  padding: 0.85rem 0.85rem 0.85rem 1rem;
-  margin-bottom: 0.5rem;
-}
-
-.result-item .timestamp {
-  font-size: 0.72rem;
-  color: var(--ink-placeholder);
-  margin-bottom: 0.25rem;
-  font-style: italic;
-}
-
-.result-item .mode-tag {
-  display: inline-block;
-  font-family: var(--font-display);
-  font-size: 0.65rem;
-  padding: 0.1rem 0.45rem;
-  border: 1.5px solid currentColor;
-  border-radius: 2px;
-  margin-left: 0.5rem;
-  transform: rotate(-1.5deg);
-  display: inline-block;
-  letter-spacing: 0.12em;
-  opacity: 0.85;
-}
-.mode-tag.note {
-  color: var(--ink-blue);
-}
-
-.result-item .text {
-  white-space: pre-wrap;
-  line-height: 1.65;
-  color: var(--ink-primary);
-}
-
-.result-item .transcript {
-  font-size: 0.85rem;
-  color: var(--ink-faded);
-  margin-bottom: 0.5rem;
-  white-space: pre-wrap;
-  line-height: 1.4;
-  font-style: italic;
-}
-
-.result-item .transcript-label {
-  font-family: var(--font-display);
-  font-size: 0.65rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-placeholder);
-}
 
 /* ── Note links — clickable to navigate ── */
 .note-link {

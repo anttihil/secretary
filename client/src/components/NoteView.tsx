@@ -1,16 +1,14 @@
 import { Show, For, createSignal, createEffect, onMount, onCleanup } from "solid-js";
 import type { Component } from "solid-js";
-import type { Note, NoteListItem, Result } from "../types";
+import type { Note, NoteListItem } from "../types";
 import { addToGlossary } from "../api";
 import GlossaryModal from "./GlossaryModal";
 import InsertTagModal from "./InsertTagModal";
 import InsertNoteLinkModal from "./InsertNoteLinkModal";
 import StatusBar from "./StatusBar";
-import ResultList from "./ResultList";
 
 interface NoteViewProps {
   note: Note | null;
-  results: Result[];
   status: string;
   isRecording: boolean;
   isCleaning: boolean;
@@ -247,9 +245,6 @@ const NoteView: Component<NoteViewProps> = (props) => {
               }}
             </For>
           </Show>
-        </div>
-        <div style="margin-top: 1rem">
-          <ResultList results={props.results} />
         </div>
       </div>
       <Show when={contextMenuPos() !== null}>
