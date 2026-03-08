@@ -173,7 +173,7 @@ const Sidebar: Component<SidebarProps> = (props) => {
         }}
         onDragEnd={clearDragState}
       >
-        <div class="note-item-title">{note.title}</div>
+        <div class="note-item-title">{note.title || "Untitled"}</div>
         <div class="note-item-date">{note.updated}</div>
       </div>
     );
