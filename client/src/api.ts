@@ -79,6 +79,16 @@ export async function replaceNoteBody(
   return resp.json();
 }
 
+export async function renameNote(filename: string, title: string): Promise<Note> {
+  const resp = await fetch(`/api/notes/${encodeNotePath(filename)}/rename`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (!resp.ok) throw new Error("Failed to rename note");
+  return resp.json();
+}
+
 export async function migrateNotes(): Promise<{
   migrated: number;
   skipped: number;

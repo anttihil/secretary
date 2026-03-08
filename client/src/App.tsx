@@ -16,6 +16,7 @@ import {
   appendToNote,
   cleanNote,
   replaceNoteBody,
+  renameNote,
   migrateNotes,
   createDirectory,
   moveNote,
@@ -295,6 +296,22 @@ export default function App() {
     }
   }
 
+  async function handleRenameNote(newTitle: string): Promise<void> {
+    const note = currentNote();
+    if (!note) return;
+    try {
+      const updated = await renameNote(note.filename, newTitle);
+      setCurrentNote(updated);
+      setNotes(notes().map((n) =>
+        n.filename === note.filename
+          ? { ...n, filename: updated.filename, title: updated.title, updated: updated.updated }
+          : n
+      ));
+    } catch (e) {
+      console.error("Failed to rename note:", e);
+    }
+  }
+
   async function applyCleanup(finalText: string): Promise<void> {
     const note = currentNote();
     if (!note) return;
@@ -370,6 +387,7 @@ export default function App() {
             onDelete={handleDeleteNote}
             onClean={handleCleanNote}
             onUpdateBody={handleUpdateNoteBody}
+            onRenameNote={handleRenameNote}
             onOpenNote={handleOpenNote}
           />
         </Show>

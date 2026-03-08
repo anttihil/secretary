@@ -483,6 +483,15 @@ button:disabled {
   opacity: 0.7;
 }
 
+/* ── Tag tokens ── */
+.tag-token {
+  cursor: default;
+  color: var(--ink-faded);
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
 /* ── Transcript words — clickable for glossary ── */
 .transcript-word {
   cursor: pointer;
@@ -517,6 +526,26 @@ button:disabled {
   color: var(--ink-primary);
   font-size: 1.35rem;
   letter-spacing: 0.05em;
+}
+
+.note-title {
+  cursor: text;
+}
+.note-title:hover {
+  opacity: 0.75;
+}
+.note-title-input {
+  flex: 1;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  letter-spacing: 0.05em;
+  color: var(--ink-primary);
+  background: transparent;
+  border: none;
+  border-bottom: 1.5px solid var(--border-rule);
+  outline: none;
+  padding: 0;
+  width: 100%;
 }
 
 .note-body {

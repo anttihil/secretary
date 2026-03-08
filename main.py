@@ -421,6 +421,37 @@ async def clean_note(filename: str):
     return {"cleaned": cleaned}
 
 
+class RenameNoteRequest(BaseModel):
+    title: str
+
+
+@app.post("/api/notes/{filename:path}/rename")
+async def rename_note(filename: str, req: RenameNoteRequest):
+    path = validate_note_path(filename)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Note not found")
+    metadata, body = parse_frontmatter(path.read_text())
+    m = re.match(r"^(.+)-(\d{8}-\d{6})$", path.stem)
+    timestamp_part = (
+        m.group(2) if m else datetime.now(timezone.utc).strftime(FILE_TIMESTAMP_FMT)
+    )
+    new_basename = f"{slugify(req.title)}-{timestamp_part}.md"
+    new_path = path.parent / new_basename
+    if new_path != path and new_path.exists():
+        raise HTTPException(
+            status_code=409, detail="A note with that name already exists"
+        )
+    metadata["title"] = req.title
+    metadata["updated"] = datetime.now(timezone.utc).strftime(FRONTMATTER_TIMESTAMP_FMT)
+    path.write_text(format_frontmatter(metadata, body))
+    if new_path != path:
+        path.rename(new_path)
+    schedule_git_sync()
+    resolved = NOTES_DIR.resolve()
+    new_filename = str(new_path.resolve().relative_to(resolved))
+    return {"filename": new_filename, "body": body, **metadata}
+
+
 @app.post("/api/notes/{filename:path}/replace")
 async def replace_note_body(filename: str, req: ReplaceNoteBodyRequest):
     path = validate_note_path(filename)
