@@ -47,6 +47,14 @@ def ensure_notes_dir():
     NOTES_DIR.mkdir(exist_ok=True)
 
 
+def is_excluded_note(path: Path) -> bool:
+    """Return True if path should be excluded: README.md or inside a hidden directory."""
+    if path.name == "README.md":
+        return True
+    rel = path.relative_to(NOTES_DIR)
+    return any(part.startswith(".") for part in rel.parts)
+
+
 def is_git_repo(path: Path) -> bool:
     """Check if path is inside a git repository."""
     current = path.resolve()
@@ -324,7 +332,7 @@ async def list_notes():
         ensure_notes_dir()
     except OSError:
         raise HTTPException(500, "No notes directory configured")
-    note_files = NOTES_DIR.rglob("*.md")
+    note_files = [p for p in NOTES_DIR.rglob("*.md") if not is_excluded_note(p)]
     resolved = NOTES_DIR.resolve()
 
     note_data = [
@@ -338,7 +346,7 @@ async def list_notes():
     directories = sorted(
         str(d.resolve().relative_to(resolved))
         for d in NOTES_DIR.rglob("*")
-        if d.is_dir()
+        if d.is_dir() and not any(part.startswith(".") for part in d.relative_to(NOTES_DIR).parts)
     )
 
     notes = sorted(note_data, key=lambda n: n.get("updated", ""), reverse=True)
@@ -474,7 +482,7 @@ async def migrate_notes():
     skipped = 0
     files = []
 
-    for path in sorted(NOTES_DIR.rglob("*.md")):
+    for path in sorted(p for p in NOTES_DIR.rglob("*.md") if not is_excluded_note(p)):
         metadata, body = parse_frontmatter(path.read_text())
         actions = []
 
