@@ -1,38 +1,21 @@
 # Secretary
 
-Voice-powered AI assistant that accepts audio via WebSocket, transcribes it, and processes it through an LLM. Supports two modes: **note** (transcribe and clean up text) and **command** (transcribe and execute as an LLM prompt).
+Secretary is a self-hosted dictation tool designed for seamless note-taking. It accepts audio via WebSocket, transcribes it using Whisper, and uses a local LLM to clean up your notes. Secretary prioritizes your privacy and full ownership of your data—everything runs entirely on your own hardware, making it completely free to use (aside from electricity costs).
 
 ## Setup
 
-### 1. Install dependencies
-
 ```bash
+# 1. Install dependencies
 uv sync
-```
 
-### 2. Download a GGUF model
+# 2. Download a GGUF model (e.g. Qwen2.5-3B-Instruct)
+curl -L https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf --create-dirs -o ./models/qwen2.5-3b-instruct-q4_k_m.gguf
 
-Download a small GGUF model file, for example:
-
-- [Qwen2.5-3B-Instruct-GGUF](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF) (Q4_K_M recommended)
-- [Phi-4-mini-instruct-GGUF](https://huggingface.co/microsoft/Phi-4-mini-instruct-gguf)
-
-example:
-`curl -L https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf --create-dirs -o ./models/qwen2.5-3b-instruct-q4_k_m.gguf`
-Place it somewhere accessible, e.g. `./models/your-model.gguf`.
-
-### 3. Configure environment
-
-Copy `.env.example` to `.env` and set your model path:
-
-```bash
+# 3. Configure environment
 cp .env.example .env
-# Edit .env and set LLM_MODEL_PATH to your downloaded model
-```
+# Edit .env and set LLM_MODEL_PATH to your downloaded model path
 
-### 4. Run the server
-
-```bash
+# 4. Run the server
 uv run fastapi dev main.py
 ```
 
@@ -59,17 +42,6 @@ Set `AI_CLIENT=aws` and `S3_BUCKET=your-bucket` in your `.env` file.
 ## Usage
 
 Open `http://localhost:8000` in your browser to use the web UI.
-
-### WebSocket API
-
-Connect via WebSocket to `/ws` and send text commands:
-
-- `note` - Start recording in note mode (transcribe + clean up)
-- `command` - Start recording in command mode (transcribe + LLM prompt)
-- `stop` - Stop recording and process audio
-- `close` - Close the connection
-
-Send binary audio chunks between `note`/`command` and `stop`.
 
 ## Running as a Linux service
 
