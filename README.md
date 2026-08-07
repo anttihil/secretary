@@ -29,8 +29,11 @@ curl -L https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.
 cp .env.example .env
 # Edit .env and set LLM_MODEL_PATH to your downloaded model path
 
-# 4. Run the server
-uv run fastapi dev main.py
+# 4. Build static assets
+make build
+
+# 5. Serve the app
+make serve
 ```
 
 ### GPU acceleration (optional)
