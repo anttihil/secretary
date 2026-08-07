@@ -1,6 +1,6 @@
 # Secretary
 
-Secretary is a self-hosted dictation tool designed for seamless note-taking. It accepts audio via WebSocket, transcribes it using Whisper, and uses a local LLM to clean up your notes. Secretary prioritizes your privacy and full ownership of your data. Everything runs entirely on your own hardware, making it completely free to use (aside from electricity costs).
+Secretary is a self-hosted dictation tool designed for seamless note-taking. It accepts audio via WebSocket, and transcribes it using Whisper. You can set it up to push the notes to a git remote. Also, there's an option to use a local LLM to clean up your notes. Secretary prioritizes your privacy and full ownership of your data. Everything runs entirely on your own hardware, making it completely free to use (aside from electricity costs).
 
 I use this on Tailscale so any device connected to my tailnet can access it from anywhere with an internet connection. This way the web app can be served from my home server while the actual usage is via a mobile browser. There was some initial setup involved: downloading the model file, setting up the Linux service file and installing Tailscale. After that it has been working for months without problems. Amazingly low maintenance for a home brew project!
 
