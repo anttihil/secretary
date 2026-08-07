@@ -555,7 +555,8 @@ button:disabled {
   right: 0;
   bottom: 0;
   background: rgba(26, 18, 9, 0.55);
-  z-index: 100;
+  /* Above the mobile sidebar drawer (200) and context menus (300) */
+  z-index: 400;
   align-items: center;
   justify-content: center;
 }
