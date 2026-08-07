@@ -340,13 +340,25 @@ button:disabled {
   box-shadow: inset 0 3px 0 0 var(--ink-red);
 }
 
+.welcome-view {
+  padding: 3.5rem 2.5rem;
+}
+
+/* Keep the letterhead block from stretching across wide desktop screens */
+.welcome-view > * {
+  width: 100%;
+  max-width: 34rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .welcome-view h1 {
   font-family: var(--font-display);
   text-align: center;
-  font-size: 2rem;
+  font-size: 2.25rem;
   color: var(--ink-primary);
-  letter-spacing: 0.1em;
-  margin-bottom: 0.25rem;
+  letter-spacing: 0.12em;
+  margin-bottom: 0.75rem;
 }
 
 .welcome-hint {
@@ -363,10 +375,10 @@ button:disabled {
   color: var(--ink-faded);
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  margin-bottom: 1.75rem;
+  margin-bottom: 2.5rem;
   border-top: 1px solid var(--border-rule);
   border-bottom: 1px solid var(--border-rule);
-  padding: 0.3rem 0;
+  padding: 0.55rem 0;
 }
 
 /* ── Controls ── */
@@ -929,9 +941,11 @@ button:disabled {
   /* Scale down letterhead title */
   .welcome-view h1 {
     font-size: 1.5rem;
+    margin-bottom: 0.4rem;
   }
   .letterhead-subtitle {
-    margin-bottom: 1rem;
+    margin-bottom: 1.25rem;
+    padding: 0.35rem 0;
   }
 
   /* Note body: adjust red-line to match reduced padding */
