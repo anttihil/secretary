@@ -1,7 +1,7 @@
 [project]
 name = "secretary"
 version = "0.1.0"
-description = "Add your description here"
+description = "Self-hosted voice dictation and note-taking with local Whisper and a local LLM"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -21,3 +21,15 @@ line-length = 88
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+
+# llama-cpp-python publishes only an sdist to PyPI, so installing from there
+# compiles llama.cpp from source. Pull it from the upstream author's prebuilt
+# wheel index instead. `explicit` binds this index to that one package, so
+# nothing else resolves through it.
+[[tool.uv.index]]
+name = "llama-cpp-cpu"
+url = "https://abetlen.github.io/llama-cpp-python/whl/cpu/"
+explicit = true
+
+[tool.uv.sources]
+llama-cpp-python = { index = "llama-cpp-cpu" }

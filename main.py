@@ -50,7 +50,7 @@ def ensure_notes_dir():
 
 
 def is_excluded_note(path: Path) -> bool:
-    """Return True if path should be excluded: README.md or inside a hidden directory."""
+    """Return True if path is excluded: README.md or inside a hidden directory."""
     if path.name == "README.md":
         return True
     rel = path.relative_to(NOTES_DIR)

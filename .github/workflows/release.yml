@@ -1,0 +1,59 @@
+name: Release
+
+# Publishes a tarball that already contains the built frontend, so installing
+# Secretary needs neither Node.js nor a compiler — only uv.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Build frontend
+        run: |
+          cd client
+          npm ci
+          npm run build
+
+      - name: Verify the build produced static assets
+        run: test -f static/index.html
+
+      - name: Assemble release tarball
+        id: assemble
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          mkdir -p dist/secretary
+          cp -r main.py ai_client.py aws_client.py config.py \
+                pyproject.toml uv.lock .env.example Makefile \
+                secretary.service README.md LICENSE static dist/secretary/
+          mkdir -p dist/secretary/notes && touch dist/secretary/notes/.gitkeep
+          tar -czf "secretary-$tag.tar.gz" -C dist secretary
+          ls -lh "secretary-$tag.tar.gz"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.assemble.outputs.tag }}"
+          gh release view "$tag" >/dev/null 2>&1 \
+            && gh release upload "$tag" "secretary-$tag.tar.gz" --clobber \
+            || gh release create "$tag" "secretary-$tag.tar.gz" \
+                 --title "$tag" --generate-notes

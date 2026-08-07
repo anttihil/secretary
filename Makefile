@@ -1,7 +1,10 @@
-.PHONY: install install-aws dev dev-backend dev-frontend build lint format lint-fix check serve help
+.PHONY: setup install install-aws dev dev-backend dev-frontend build lint format lint-fix check serve help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+
+setup: ## First-time setup: dependencies, model, .env and frontend build
+	./setup.sh
 
 install: ## Install all dependencies
 	uv sync
