@@ -2,6 +2,7 @@ import { Show, For, createSignal, createEffect, onMount, onCleanup } from "solid
 import type { Component } from "solid-js";
 import type { Note, NoteListItem } from "../types";
 import { addToGlossary } from "../api";
+import { positionMenu } from "../menuPosition";
 import GlossaryModal from "./GlossaryModal";
 import InsertTagModal from "./InsertTagModal";
 import InsertNoteLinkModal from "./InsertNoteLinkModal";
@@ -55,9 +56,16 @@ const NoteView: Component<NoteViewProps> = (props) => {
   const [insertMode, setInsertMode] = createSignal<"tag" | "notelink" | null>(null);
   const [contextMenuTokenType, setContextMenuTokenType] = createSignal<Token["type"] | "empty">("empty");
 
+  let contextMenuRef: HTMLDivElement | undefined;
+
   function closeContextMenu(): void {
     setContextMenuPos(null);
   }
+
+  createEffect(() => {
+    const pos = contextMenuPos();
+    if (pos && contextMenuRef) positionMenu(contextMenuRef, pos.x, pos.y);
+  });
 
   onMount(() => document.addEventListener("click", closeContextMenu));
   onCleanup(() => document.removeEventListener("click", closeContextMenu));
@@ -208,8 +216,8 @@ const NoteView: Component<NoteViewProps> = (props) => {
       </div>
       <Show when={contextMenuPos() !== null}>
         <div
+          ref={contextMenuRef}
           class="context-menu"
-          style={{ left: `${contextMenuPos()!.x}px`, top: `${contextMenuPos()!.y}px` }}
           onClick={(e) => e.stopPropagation()}
         >
           <Show when={contextMenuTokenType() === "tag" || contextMenuTokenType() === "notelink"}>

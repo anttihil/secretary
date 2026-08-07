@@ -1,6 +1,7 @@
-import { For, Show, createSignal, createMemo, onMount, onCleanup } from "solid-js";
+import { For, Show, createSignal, createMemo, createEffect, onMount, onCleanup } from "solid-js";
 import type { Component } from "solid-js";
 import type { NoteListItem, Note } from "../types";
+import { positionMenu } from "../menuPosition";
 
 interface DirNode {
   name: string;
@@ -69,6 +70,7 @@ const Sidebar: Component<SidebarProps> = (props) => {
   const [dragOverDir, setDragOverDir] = createSignal<string | null>(null);
   const [draggingItem, setDraggingItem] = createSignal<{ type: "note" | "dir"; path: string } | null>(null);
   const [contextMenu, setContextMenu] = createSignal<ContextMenuState | null>(null);
+  let contextMenuRef: HTMLDivElement | undefined;
 
   function clearDragState() {
     setIsDragging(false);
@@ -117,6 +119,11 @@ const Sidebar: Component<SidebarProps> = (props) => {
   function closeContextMenu(): void {
     setContextMenu(null);
   }
+
+  createEffect(() => {
+    const menu = contextMenu();
+    if (menu && contextMenuRef) positionMenu(contextMenuRef, menu.x, menu.y);
+  });
 
   function handleContextMenuDelete(): void {
     const menu = contextMenu();
@@ -279,8 +286,8 @@ const Sidebar: Component<SidebarProps> = (props) => {
       </div>
       <Show when={contextMenu() !== null}>
         <div
+          ref={contextMenuRef}
           class="context-menu"
-          style={{ left: `${contextMenu()!.x}px`, top: `${contextMenu()!.y}px` }}
           onClick={(e) => e.stopPropagation()}
         >
           <button style={{ color: "var(--ink-red)" }} onClick={handleContextMenuDelete}>

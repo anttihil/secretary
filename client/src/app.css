@@ -779,6 +779,8 @@ button:disabled {
 .context-menu {
   position: fixed;
   z-index: 300;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   background: var(--paper-card);
   border: 1.5px solid var(--border-manila);
   box-shadow: 3px 3px 0 rgba(26,18,9,0.15);
