@@ -1,4 +1,9 @@
-import type { Note, NotesListResponse, Settings } from "./types";
+import type {
+  MigrationResult,
+  Note,
+  NotesListResponse,
+  Settings,
+} from "./types";
 
 function encodeNotePath(filename: string): string {
   return filename
@@ -89,11 +94,7 @@ export async function renameNote(filename: string, title: string): Promise<Note>
   return resp.json();
 }
 
-export async function migrateNotes(): Promise<{
-  migrated: number;
-  skipped: number;
-  files: { original_filename: string; filename: string; actions: string[] }[];
-}> {
+export async function migrateNotes(): Promise<MigrationResult> {
   const resp = await fetch("/api/migrate", { method: "POST" });
   if (!resp.ok) throw new Error("Migration failed");
   return resp.json();

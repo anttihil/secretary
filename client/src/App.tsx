@@ -1,5 +1,5 @@
 import { createSignal, onMount, onCleanup, Show } from "solid-js";
-import type { Note, NoteListItem, WsMessage } from "./types";
+import type { MigrationResult, Note, NoteListItem, WsMessage } from "./types";
 import Sidebar from "./components/Sidebar";
 import NoteView from "./components/NoteView";
 import NewNoteModal from "./components/NewNoteModal";
@@ -24,6 +24,22 @@ import {
   moveDirectory,
 } from "./api";
 
+function describeMigration(result: MigrationResult): string {
+  const total = result.migrated + result.skipped;
+  if (result.migrated === 0) {
+    return total === 0
+      ? "No markdown files found in your notes folder."
+      : `Nothing to import — all ${total} notes already use Secretary's format.`;
+  }
+  const renamed = result.files.filter((f) =>
+    f.actions.some((a) => a.startsWith("renamed")),
+  ).length;
+  const parts = [`Imported ${result.migrated} of ${total} notes.`];
+  if (renamed > 0) parts.push(`${renamed} renamed.`);
+  if (result.skipped > 0) parts.push(`${result.skipped} already up to date.`);
+  return parts.join(" ");
+}
+
 export default function App() {
   const [notes, setNotes] = createSignal<NoteListItem[]>([]);
   const [directories, setDirectories] = createSignal<string[]>([]);
@@ -42,6 +58,7 @@ export default function App() {
   const [showDirectoryModal, setShowDirectoryModal] = createSignal(false);
   const [showConfirmModal, setShowConfirmModal] = createSignal(false);
   const [confirmMessage, setConfirmMessage] = createSignal("");
+  const [confirmLabel, setConfirmLabel] = createSignal("Delete");
   const [confirmAction, setConfirmAction] = createSignal<(() => void) | null>(
     null,
   );
@@ -167,8 +184,13 @@ export default function App() {
     } catch {}
   }
 
-  function openConfirmModal(message: string, action: () => void): void {
+  function openConfirmModal(
+    message: string,
+    action: () => void,
+    label = "Delete",
+  ): void {
     setConfirmMessage(message);
+    setConfirmLabel(label);
     setConfirmAction(() => action);
     setShowConfirmModal(true);
   }
@@ -233,14 +255,25 @@ export default function App() {
   }
 
   async function handleMigrate(): Promise<void> {
-    try {
-      const result = await migrateNotes();
-      await loadNotes();
-      alert(`Migrated ${result.migrated} notes.`);
-    } catch (e) {
-      console.error("Migration failed:", e);
-      alert("Migration failed.");
-    }
+    openConfirmModal(
+      "Import every markdown file in your notes folder into Secretary's " +
+        "format? Files missing a title, created or updated field get one " +
+        "added, and files not already named title-YYYYMMDD-HHMMSS.md are " +
+        "renamed to match. Notes already in that format are left alone. " +
+        "This edits the files in place.",
+      async () => {
+        setShowConfirmModal(false);
+        try {
+          const result = await migrateNotes();
+          await loadNotes();
+          alert(describeMigration(result));
+        } catch (e) {
+          console.error("Import failed:", e);
+          alert("Import failed.");
+        }
+      },
+      "Import",
+    );
   }
 
   async function handleCreateDirectory(
@@ -500,6 +533,7 @@ export default function App() {
       <Show when={showConfirmModal()}>
         <ConfirmModal
           message={confirmMessage()}
+          confirmLabel={confirmLabel()}
           onConfirm={() => {
             confirmAction()?.();
           }}

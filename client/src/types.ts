@@ -14,6 +14,18 @@ export interface NotesListResponse {
   directories: string[];
 }
 
+export interface MigratedFile {
+  original_filename: string;
+  filename: string;
+  actions: string[];
+}
+
+export interface MigrationResult {
+  migrated: number;
+  skipped: number;
+  files: MigratedFile[];
+}
+
 export interface Result {
   transcript: string | null;
   result: string;

@@ -36,6 +36,29 @@ make build
 make serve
 ```
 
+### Using an existing notes folder (optional)
+
+By default Secretary reads and writes notes in `./notes`. To use markdown you
+already have, point `NOTES_DIR` at that folder in your `.env`:
+
+```
+NOTES_DIR=/home/you/my-notes
+```
+
+Secretary expects each note to carry `title`, `created` and `updated`
+frontmatter and to be named `title-YYYYMMDD-HHMMSS.md`. Existing files usually
+match neither. The **Import existing notes** button at the bottom of the
+sidebar fixes that in one pass: it fills in any missing frontmatter (inferring
+timestamps from the filename, or falling back to the file's modification time)
+and renames files to the expected form. Notes that already conform are left
+untouched, so it is safe to run more than once.
+
+It edits the files in place, so back up the folder first. In particular, note
+that renaming breaks `[[wikilinks]]` in tools that resolve links by filename,
+such as Obsidian — Secretary's own links resolve by title and survive the
+rename. If your notes folder is a git repository, Secretary commits and pushes
+changes automatically, which includes the import.
+
 ### GPU acceleration (optional)
 
 By default, `llama-cpp-python` is installed as CPU-only. To enable GPU acceleration on NVIDIA hardware, reinstall it with CUDA support:

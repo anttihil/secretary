@@ -2,6 +2,7 @@ import type { Component } from "solid-js";
 
 interface ConfirmModalProps {
   message: string;
+  confirmLabel?: string;
   onConfirm: () => void;
   onClose: () => void;
 }
@@ -30,7 +31,7 @@ const ConfirmModal: Component<ConfirmModalProps> = (props) => {
             Cancel
           </button>
           <button class="btn-delete" onClick={props.onConfirm}>
-            Delete
+            {props.confirmLabel ?? "Delete"}
           </button>
         </div>
       </div>

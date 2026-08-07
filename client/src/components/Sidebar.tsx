@@ -278,7 +278,7 @@ const Sidebar: Component<SidebarProps> = (props) => {
       </div>
       <div class="sidebar-footer">
         <button class="btn-migrate" onClick={props.onMigrate}>
-          Import legacy notes
+          Import existing notes
         </button>
         <button class="btn-settings" onClick={props.onSettings}>
           Settings
