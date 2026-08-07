@@ -40,6 +40,7 @@ def validate_note_path(filename: str) -> Path:
         raise HTTPException(status_code=400, detail="Invalid filename")
     return path
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -216,7 +217,16 @@ async def audio_worker():
                     }
                 )
         except Exception as e:
-            logger.error("Worker error (job %s): %s", job.job_id, e)
+            if isinstance(job, AudioJob):
+                logger.error(
+                    "Worker error (job %s, %d bytes, head %s): %s",
+                    job.job_id,
+                    len(job.audio_data),
+                    job.audio_data[:8].hex(),
+                    e,
+                )
+            else:
+                logger.error("Worker error (job %s): %s", job.job_id, e)
             if isinstance(job, CleanupJob):
                 if not job.future.done():
                     job.future.set_exception(e)
@@ -346,10 +356,15 @@ async def list_notes():
     directories = sorted(
         str(d.resolve().relative_to(resolved))
         for d in NOTES_DIR.rglob("*")
-        if d.is_dir() and not any(part.startswith(".") for part in d.relative_to(NOTES_DIR).parts)
+        if d.is_dir()
+        and not any(part.startswith(".") for part in d.relative_to(NOTES_DIR).parts)
     )
 
-    notes = sorted(note_data, key=lambda n: n.get("updated") or n.get("created") or "", reverse=True)
+    notes = sorted(
+        note_data,
+        key=lambda n: n.get("updated") or n.get("created") or "",
+        reverse=True,
+    )
     return {"notes": notes, "directories": directories}
 
 
@@ -716,6 +731,10 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             message = await websocket.receive()
+            # The low-level receive() returns the disconnect message rather than
+            # raising; calling it again afterwards is a RuntimeError.
+            if message["type"] == "websocket.disconnect":
+                break
             if "text" in message:
                 data = message["text"]
                 match data:
@@ -746,6 +765,16 @@ async def websocket_endpoint(websocket: WebSocket):
                             continue
                         recording = False
                         audio_data = b"".join(chunks)
+                        chunks = []
+                        if not audio_data:
+                            mode = ""
+                            await websocket.send_json(
+                                {
+                                    "status": "error",
+                                    "message": "Recording was too short",
+                                }
+                            )
+                            continue
                         job_id = str(uuid.uuid4())
                         job = AudioJob(
                             job_id=job_id,
@@ -758,7 +787,6 @@ async def websocket_endpoint(websocket: WebSocket):
                         await websocket.send_json(
                             {"status": "queued", "job_id": job_id}
                         )
-                        chunks = []
                         mode = ""
                     case _:
                         await websocket.send_text(f"Unknown command: {data}")

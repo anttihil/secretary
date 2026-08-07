@@ -2,7 +2,22 @@ import json
 import time
 import uuid
 
-from ai_client import AIClient, _detect_audio_format
+from ai_client import AIClient
+
+
+def _detect_audio_format(audio_data: bytes) -> str:
+    """Detect audio format from magic bytes.
+
+    Returns a file extension like '.webm' or '.wav'. AWS Transcribe requires an
+    explicit MediaFormat, so unlike the local path we cannot defer to a decoder.
+    """
+    match audio_data[:4]:
+        case b"\x1a\x45\xdf\xa3":
+            return ".webm"
+        case b"RIFF":
+            return ".wav"
+        case _:
+            raise ValueError("Unknown audio format")
 
 
 class AWSAIClient(AIClient):

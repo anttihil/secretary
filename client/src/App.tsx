@@ -113,7 +113,10 @@ export default function App() {
         if (e.data.size > 0 && ws!.readyState === WebSocket.OPEN)
           ws!.send(e.data);
       };
-      mediaRecorder.onstop = () => stream.getTracks().forEach((t) => t.stop());
+      mediaRecorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send("stop");
+      };
       mediaRecorder.start(250);
       setStatus("Recording...");
       setIsRecording(true);
@@ -124,11 +127,16 @@ export default function App() {
   }
 
   function stopRecording(): void {
-    if (mediaRecorder && mediaRecorder.state !== "inactive")
-      mediaRecorder.stop();
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send("stop");
     setStatus("Processing...");
     setIsRecording(false);
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      // "stop" is sent from onstop, not here: MediaRecorder.stop() flushes its
+      // last chunk from a queued task, so a synchronous send would reach the
+      // server first and that chunk would be dropped.
+      mediaRecorder.stop();
+      return;
+    }
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send("stop");
   }
 
   async function loadNotes(): Promise<void> {

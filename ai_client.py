@@ -1,6 +1,6 @@
 import os
-import tempfile
 from abc import ABC, abstractmethod
+from io import BytesIO
 from pathlib import Path
 from typing import cast
 
@@ -12,21 +12,6 @@ def get_whisper_capabilities() -> dict:
     import ctranslate2
 
     return {"cuda_available": ctranslate2.get_cuda_device_count() > 0}
-
-
-def _detect_audio_format(audio_data: bytes) -> str:
-    """Detect audio format from magic bytes.
-
-    Returns file extension like '.webm' or '.wav'.
-    """
-    start = audio_data[:4]
-    match start:
-        case b"\x1a\x45\xdf\xa3":
-            return ".webm"
-        case b"RIFF":
-            return ".wav"
-        case _:
-            raise ValueError("Unknown audio format")
 
 
 class AIClient(ABC):
@@ -94,12 +79,12 @@ class LocalAIClient(AIClient):
         self.glossary = _load_glossary(self.glossary_path)
 
     def convert_speech_to_text(self, audio_data: bytes) -> str:
-        suffix = _detect_audio_format(audio_data)
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-            f.write(audio_data)
-            f.flush()
-            segments, _ = self.whisper.transcribe(f.name, vad_filter=True)
-            return " ".join(segment.text.strip() for segment in segments)
+        if not audio_data:
+            raise ValueError("No audio data")
+        # faster-whisper decodes through PyAV, which sniffs the container
+        # itself, so any format ffmpeg understands works here.
+        segments, _ = self.whisper.transcribe(BytesIO(audio_data), vad_filter=True)
+        return " ".join(segment.text.strip() for segment in segments)
 
     def text_prompt(self, prompt: str, system: str | None = None) -> str:
         messages: list[ChatCompletionRequestMessage] = []
