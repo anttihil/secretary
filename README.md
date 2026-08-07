@@ -43,16 +43,6 @@ CMAKE_ARGS="-DGGML_CUDA=on" uv pip install llama-cpp-python --upgrade --force-re
 
 This compiles from source and takes several minutes. Requires the CUDA toolkit (`nvcc --version` to verify). Check your CUDA version with `nvidia-smi`.
 
-### AWS mode
-
-To use AWS services (Transcribe, Bedrock, S3) instead of local models:
-
-```bash
-uv sync --group aws
-```
-
-Set `AI_CLIENT=aws` and `S3_BUCKET=your-bucket` in your `.env` file.
-
 ## Usage
 
 Open `http://localhost:8000` in your browser to use the web UI.
