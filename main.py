@@ -196,7 +196,18 @@ async def audio_worker():
                 job.future.set_result(cleaned)
             else:
                 note_context = ""
-                if job.note_filename and job.mode == "note":
+                existing_titles: list[str] = []
+                if NOTES_DIR.exists():
+                    for p in NOTES_DIR.rglob("*.md"):
+                        if not is_excluded_note(p):
+                            try:
+                                meta, _ = parse_frontmatter(p.read_text())
+                                if "title" in meta:
+                                    existing_titles.append(meta["title"])
+                            except Exception:
+                                pass
+
+                if job.note_filename:
                     note_path = NOTES_DIR / job.note_filename
                     if note_path.exists():
                         _, note_context = parse_frontmatter(note_path.read_text())
@@ -207,16 +218,22 @@ async def audio_worker():
                     job.audio_data,
                     job.mode,
                     note_context,
+                    existing_titles,
                 )
-                await job.websocket.send_json(
-                    {
-                        "status": "complete",
-                        "job_id": job.job_id,
-                        "mode": job.mode,
-                        "transcript": job_result["transcript"],
-                        "result": job_result["result"],
-                    }
-                )
+
+                payload = {
+                    "status": "complete",
+                    "job_id": job.job_id,
+                    "mode": job.mode,
+                    "transcript": job_result.get("transcript", ""),
+                    "result": job_result.get("result", ""),
+                }
+                if "action" in job_result:
+                    payload["action"] = job_result["action"]
+                if "command" in job_result:
+                    payload["command"] = job_result["command"]
+
+                await job.websocket.send_json(payload)
         except Exception as e:
             if isinstance(job, AudioJob):
                 logger.error(
@@ -761,6 +778,25 @@ async def websocket_endpoint(websocket: WebSocket):
                         note_filename = None
                         chunks = []
                         await websocket.send_text("Recording started (note mode)")
+                    case data if data.startswith("command:"):
+                        if recording:
+                            continue
+                        recording = True
+                        mode = "command"
+                        nf = data[8:]
+                        if nf:
+                            validate_note_path(nf)
+                        note_filename = nf or None
+                        chunks = []
+                        await websocket.send_text("Recording started (command mode)")
+                    case "command":
+                        if recording:
+                            continue
+                        recording = True
+                        mode = "command"
+                        note_filename = None
+                        chunks = []
+                        await websocket.send_text("Recording started (command mode)")
                     case "stop":
                         if not recording:
                             continue

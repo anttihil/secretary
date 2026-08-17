@@ -1,6 +1,7 @@
 import json
 import time
 import uuid
+from typing import Any
 
 from ai_client import AIClient
 
@@ -40,6 +41,9 @@ class AWSAIClient(AIClient):
         self.s3_bucket = s3_bucket
         self.model_id = model_id
         self.local_path = local_path
+
+    def reload_glossary(self):
+        pass
 
     def convert_speech_to_text(self, audio_data: bytes) -> str:
         job_name = f"transcribe-{uuid.uuid4()}"
@@ -101,7 +105,7 @@ class AWSAIClient(AIClient):
         )
         return response["output"]["message"]["content"][0]["text"]
 
-    def clean_note(self, note: str) -> str:
+    def clean_note(self, note: str, context: str = "") -> str:
         cleaned_note = self.text_prompt(
             f"Clean this audio transcript for any grammatical errors, "
             f"spelling mistakes, and missing words. "
@@ -109,14 +113,56 @@ class AWSAIClient(AIClient):
         )
         return cleaned_note
 
-    def process_audio(self, audio_data: bytes, mode: str) -> str:
+    def recognize_command(
+        self,
+        transcript: str,
+        note_context: str = "",
+        existing_titles: list[str] | None = None,
+    ) -> dict[str, Any]:
+        titles = existing_titles or []
+        titles_str = ", ".join(f'"{t}"' for t in titles) if titles else "None"
+        prompt = (
+            "Parse the voice transcript into a JSON object matching an action:\n"
+            '1. "add_tags": {"action": "add_tags", "tags": ["tag1", "tag2"]}\n'
+            '2. "add_links": {"action": "add_links", "links": ["Matched Title"]}\n'
+            '3. "create_note": {"action": "create_note", "title": "Title"}\n'
+            '4. "append_text": {"action": "append_text", "text": "text"}\n\n'
+            f"Available note titles: [{titles_str}]\n"
+            f"Transcript: {transcript}\n"
+            "Return ONLY raw JSON."
+        )
+        resp = self.text_prompt(prompt).strip()
+        try:
+            parsed = json.loads(resp)
+            if isinstance(parsed, dict) and "action" in parsed:
+                return parsed
+        except Exception:
+            pass
+        return {"action": "append_text", "text": transcript}
+
+    def process_audio(
+        self,
+        audio_data: bytes,
+        mode: str,
+        note_context: str = "",
+        existing_titles: list[str] | None = None,
+    ) -> dict[str, Any]:
         match mode:
             case "note":
-                note = self.convert_speech_to_text(audio_data)
-                cleaned_note = self.clean_note(note)
-                return cleaned_note
+                transcript = self.convert_speech_to_text(audio_data)
+                return {"transcript": transcript, "result": transcript}
             case "command":
-                text = self.convert_speech_to_text(audio_data)
-                return self.text_prompt(text)
+                transcript = self.convert_speech_to_text(audio_data)
+                cmd = self.recognize_command(
+                    transcript,
+                    note_context=note_context,
+                    existing_titles=existing_titles,
+                )
+                return {
+                    "transcript": transcript,
+                    "action": cmd.get("action", "append_text"),
+                    "command": cmd,
+                    "result": cmd.get("text") or transcript,
+                }
             case _:
                 raise ValueError(f"Unknown mode: {mode}")

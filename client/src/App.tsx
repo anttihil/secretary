@@ -66,6 +66,17 @@ export default function App() {
   let ws: WebSocket | undefined;
   let mediaRecorder: MediaRecorder | undefined;
 
+  function updateCurrentNoteState(updated: Note): void {
+    setNotes(
+      notes().map((n) =>
+        n.filename === updated.filename
+          ? { ...n, updated: updated.updated }
+          : n,
+      ),
+    );
+    setCurrentNote(updated);
+  }
+
   function connectWebSocket(): void {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(`${protocol}//${location.host}/ws`);
@@ -89,24 +100,49 @@ export default function App() {
             setIsRecording(false);
             break;
 
-          case "complete":
-            if (currentNote()) {
-              const updated = await appendToNote(
-                currentNote()!.filename,
-                parsed.result ?? "",
-              );
-              setNotes(
-                notes().map((n) =>
-                  n.filename === updated.filename
-                    ? { ...n, updated: updated.updated }
-                    : n,
-                ),
-              );
-              setCurrentNote(updated);
-            }
-            setStatus("Ready");
+          case "complete": {
             setIsRecording(false);
+            if (parsed.mode === "command" && parsed.command) {
+              const cmd = parsed.command;
+              if (cmd.action === "add_tags" && cmd.tags && cmd.tags.length > 0) {
+                const formattedTags = cmd.tags
+                  .map((t) => (t.startsWith("#") ? t : `#${t}`))
+                  .join(" ");
+                if (currentNote()) {
+                  const updated = await appendToNote(currentNote()!.filename, formattedTags);
+                  updateCurrentNoteState(updated);
+                }
+                setStatus(`Ready (Added tags: ${formattedTags})`);
+              } else if (cmd.action === "add_links" && cmd.links && cmd.links.length > 0) {
+                const formattedLinks = cmd.links.map((l) => `[[${l}]]`).join(" ");
+                if (currentNote()) {
+                  const updated = await appendToNote(currentNote()!.filename, formattedLinks);
+                  updateCurrentNoteState(updated);
+                }
+                setStatus(`Ready (Added link: ${formattedLinks})`);
+              } else if (cmd.action === "create_note" && cmd.title) {
+                await handleCreateNote(cmd.title, "");
+                setStatus(`Ready (Created note "${cmd.title}")`);
+              } else if (cmd.text || parsed.result) {
+                const textToAppend = cmd.text || parsed.result || "";
+                if (currentNote() && textToAppend) {
+                  const updated = await appendToNote(currentNote()!.filename, textToAppend);
+                  updateCurrentNoteState(updated);
+                }
+                setStatus("Ready");
+              } else {
+                setStatus("Ready");
+              }
+            } else if (currentNote() && (parsed.result || parsed.transcript)) {
+              const textToAppend = parsed.result || parsed.transcript || "";
+              const updated = await appendToNote(currentNote()!.filename, textToAppend);
+              updateCurrentNoteState(updated);
+              setStatus("Ready");
+            } else {
+              setStatus("Ready");
+            }
             break;
+          }
 
           case "error":
             setStatus("Error: " + parsed.message);
@@ -117,12 +153,16 @@ export default function App() {
     };
   }
 
-  async function startRecording(): Promise<void> {
+  async function startRecording(mode: "note" | "command" = "note"): Promise<void> {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    if (!currentNote()) return;
+    if (mode === "note" && !currentNote()) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      ws.send(`note:${currentNote()!.filename}`);
+      if (mode === "command") {
+        ws.send(currentNote() ? `command:${currentNote()!.filename}` : "command");
+      } else {
+        ws.send(`note:${currentNote()!.filename}`);
+      }
       mediaRecorder = new MediaRecorder(stream, {
         mimeType: "audio/webm;codecs=opus",
       });
@@ -135,7 +175,7 @@ export default function App() {
         if (ws && ws.readyState === WebSocket.OPEN) ws.send("stop");
       };
       mediaRecorder.start(250);
-      setStatus("Recording...");
+      setStatus(mode === "command" ? "Recording command..." : "Recording...");
       setIsRecording(true);
     } catch (err) {
       setStatus("Microphone access denied");
@@ -419,6 +459,7 @@ export default function App() {
           setSidebarOpen(false);
         }}
         onNewNote={openNewNoteModal}
+        onRecordCommand={() => startRecording("command")}
         onMigrate={handleMigrate}
         onSettings={() => {
           setShowSettingsModal(true);
@@ -458,8 +499,11 @@ export default function App() {
                 </button>
               }
             >
-              <button class="btn-record" onClick={() => startRecording()}>
+              <button class="btn-record" onClick={() => startRecording("note")}>
                 Record
+              </button>
+              <button class="btn-record-cmd" onClick={() => startRecording("command")}>
+                Cmd
               </button>
             </Show>
             <button
@@ -493,7 +537,8 @@ export default function App() {
             isRecording={isRecording()}
             isCleaning={isCleaning()}
             notes={notes()}
-            onRecord={() => startRecording()}
+            onRecord={() => startRecording("note")}
+            onRecordCommand={() => startRecording("command")}
             onStop={stopRecording}
             onBack={handleBack}
             onDelete={handleDeleteNote}

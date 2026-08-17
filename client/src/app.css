@@ -92,6 +92,20 @@ button:disabled {
   box-shadow: inset 1px 2px 4px rgba(44,74,124,0.2);
 }
 
+.btn-record-cmd {
+  border-color: #6d28d9;
+  color: #6d28d9;
+  box-shadow: 3px 3px 0 rgba(109,40,217,0.25);
+  font-weight: 500;
+}
+.btn-record-cmd:hover {
+  box-shadow: 2px 2px 0 rgba(109,40,217,0.25);
+  background: rgba(109,40,217,0.05);
+}
+.btn-record-cmd:active {
+  box-shadow: inset 1px 2px 4px rgba(109,40,217,0.2);
+}
+
 .btn-delete {
   background: none;
   color: var(--ink-red);

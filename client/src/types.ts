@@ -39,11 +39,22 @@ export interface Settings {
   cuda_available: boolean;
 }
 
+export interface CommandResult {
+  action: "add_tags" | "add_links" | "create_note" | "append_text";
+  tags?: string[];
+  links?: string[];
+  title?: string;
+  text?: string;
+}
+
 export interface WsMessage {
   status: "queued" | "complete" | "error";
   job_id?: string;
   mode?: string;
   transcript?: string;
+  action?: string;
+  command?: CommandResult;
   result?: string;
   message?: string;
 }
+
