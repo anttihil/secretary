@@ -5,6 +5,7 @@ description = "Self-hosted voice dictation and note-taking with local Whisper an
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "boto3>=1.42.39",
     "fastapi[standard]>=0.128.0",
     "faster-whisper>=1.1.0",
     "llama-cpp-python>=0.3.0",

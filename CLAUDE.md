@@ -18,7 +18,7 @@ Secretary is a voice-powered AI assistant that accepts audio via WebSocket, tran
 
 - `main.py` - FastAPI app with a WebSocket endpoint (`/ws`) that manages audio recording sessions. Clients send text commands ("note", "command", "stop", "close") and binary audio chunks.
 - `ai_client.py` - Abstract `AIClient` base class with two implementations:
-  - `AWSAIClient` - Uses AWS Transcribe for speech-to-text, S3 for audio storage, and Bedrock (Claude) for LLM prompts. Requires `S3_BUCKET` env var.
+  - `AWSAIClient` - Uses Amazon Lex V2 (`recognize_utterance` / `lexv2-runtime` and `lexv2-models`) for speech transcription, audio intent/command recognition, automatic bot provisioning, and custom vocabulary.
   - `LocalAIClient` - Uses OpenAI Whisper locally for speech-to-text. No LLM integration yet (stubs only).
 
 
@@ -26,6 +26,6 @@ Secretary is a voice-powered AI assistant that accepts audio via WebSocket, tran
 
 - Python 3.13, managed with `uv`
 - FastAPI with WebSocket support
-- AWS services: Bedrock, Transcribe, S3 (via boto3)
+- AWS services: Amazon Lex V2 (via boto3)
 - OpenAI Whisper for local transcription
 - Ruff for linting/formatting (rules: E, F, I; line-length 88)

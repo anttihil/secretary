@@ -156,6 +156,21 @@ def create_ai_client() -> AIClient:
             os.environ["WHISPER_DEVICE"] = settings["whisper_device"]
             os.environ["WHISPER_COMPUTE_TYPE"] = settings["whisper_compute_type"]
             return LocalAIClient(model_path, settings["whisper_model"], GLOSSARY_PATH)
+        case "aws":
+            from aws_client import AWSAIClient
+
+            local_path = os.environ.get("LOCAL_AUDIO_PATH", str(NOTES_DIR))
+            return AWSAIClient(
+                local_path=local_path,
+                bot_id=os.environ.get("LEX_BOT_ID"),
+                bot_alias_id=os.environ.get("LEX_BOT_ALIAS_ID"),
+                bot_name=os.environ.get("LEX_BOT_NAME", "SecretaryBot"),
+                bot_version=os.environ.get("LEX_BOT_VERSION", "DRAFT"),
+                locale_id=os.environ.get("LEX_LOCALE_ID", "en_US"),
+                region_name=os.environ.get("AWS_REGION", "us-east-1"),
+                role_arn=os.environ.get("LEX_ROLE_ARN"),
+                glossary_path=GLOSSARY_PATH,
+            )
         case _:
             raise ValueError("Unknown client type")
 
