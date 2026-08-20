@@ -1,9 +1,12 @@
 import json
+import logging
 import time
 import uuid
 from typing import Any
 
 from ai_client import AIClient
+
+logger = logging.getLogger("secretary.aws")
 
 
 def _detect_audio_format(audio_data: bytes) -> str:
@@ -31,6 +34,11 @@ class AWSAIClient(AIClient):
         import boto3
         from botocore.config import Config
 
+        logger.info(
+            "Initializing AWSAIClient (s3_bucket=%s, model_id=%s)",
+            s3_bucket,
+            model_id,
+        )
         self.bedrock_runtime = boto3.client(
             service_name="bedrock-runtime",
             region_name="us-east-1",
@@ -54,6 +62,14 @@ class AWSAIClient(AIClient):
         local_path = f"{self.local_path}/{job_name}{fmt}"
         with open(local_path, "wb") as f:
             f.write(audio_data)
+
+        logger.info(
+            "Starting AWS Transcribe job %s (audio_bytes=%d, format=%s)",
+            job_name,
+            len(audio_data),
+            ext,
+        )
+        t0 = time.perf_counter()
 
         # Upload audio to S3
         self.s3.put_object(Bucket=self.s3_bucket, Key=s3_key, Body=audio_data)
@@ -91,9 +107,19 @@ class AWSAIClient(AIClient):
         # Clean up S3
         self.s3.delete_object(Bucket=self.s3_bucket, Key=s3_key)
 
-        return transcript_data["results"]["transcripts"][0]["transcript"]
+        transcript = transcript_data["results"]["transcripts"][0]["transcript"]
+        duration_ms = (time.perf_counter() - t0) * 1000
+        logger.info(
+            "AWS Transcribe job %s completed in %.1fms: transcript=%r",
+            job_name,
+            duration_ms,
+            transcript,
+        )
+        return transcript
 
     def text_prompt(self, prompt: str) -> str:
+        logger.debug("AWS Bedrock prompt request (model=%s): %s", self.model_id, prompt)
+        t0 = time.perf_counter()
         response = self.bedrock_runtime.converse(
             modelId=self.model_id,
             messages=[
@@ -103,13 +129,29 @@ class AWSAIClient(AIClient):
                 }
             ],
         )
-        return response["output"]["message"]["content"][0]["text"]
+        duration_ms = (time.perf_counter() - t0) * 1000
+        result = response["output"]["message"]["content"][0]["text"]
+        logger.debug("AWS Bedrock response received in %.1fms: %r", duration_ms, result)
+        return result
 
     def clean_note(self, note: str, context: str = "") -> str:
+        logger.info(
+            "Clean note requested on AWS (note_len=%d, has_context=%s)",
+            len(note),
+            bool(context.strip()),
+        )
+        t0 = time.perf_counter()
         cleaned_note = self.text_prompt(
             f"Clean this audio transcript for any grammatical errors, "
             f"spelling mistakes, and missing words. "
             f"Return only the cleaned text: {note}"
+        )
+        duration_ms = (time.perf_counter() - t0) * 1000
+        logger.info(
+            "Clean note on AWS completed in %.1fms (output_len=%d):\n%s",
+            duration_ms,
+            len(cleaned_note),
+            cleaned_note,
         )
         return cleaned_note
 
@@ -121,6 +163,13 @@ class AWSAIClient(AIClient):
     ) -> dict[str, Any]:
         titles = existing_titles or []
         titles_str = ", ".join(f'"{t}"' for t in titles) if titles else "None"
+        logger.info(
+            "Recognize command requested on AWS (transcript=%r, "
+            "note_context_len=%d, titles_count=%d)",
+            transcript,
+            len(note_context),
+            len(titles),
+        )
         prompt = (
             "Parse the voice transcript into a JSON object matching an action:\n"
             '1. "add_tags": {"action": "add_tags", "tags": ["tag1", "tag2"]}\n'
@@ -131,13 +180,55 @@ class AWSAIClient(AIClient):
             f"Transcript: {transcript}\n"
             "Return ONLY raw JSON."
         )
+        t0 = time.perf_counter()
         resp = self.text_prompt(prompt).strip()
+        duration_ms = (time.perf_counter() - t0) * 1000
+        logger.info(
+            "Recognize command AWS LLM raw response (%.1fms):\n%s",
+            duration_ms,
+            resp,
+        )
+
+        clean_json_str = resp
+        if "```" in resp:
+            logger.debug(
+                "Markdown code block detected in AWS LLM response. Stripping fences."
+            )
+            lines = resp.splitlines()
+            code_lines = []
+            in_code = False
+            for line in lines:
+                if line.strip().startswith("```"):
+                    in_code = not in_code
+                    continue
+                if in_code:
+                    code_lines.append(line)
+            clean_json_str = "\n".join(code_lines).strip()
+
         try:
-            parsed = json.loads(resp)
+            parsed = json.loads(clean_json_str)
             if isinstance(parsed, dict) and "action" in parsed:
+                logger.info(
+                    "Recognize command successfully parsed JSON action=%r: %s",
+                    parsed.get("action"),
+                    parsed,
+                )
                 return parsed
-        except Exception:
-            pass
+            else:
+                logger.warning(
+                    "AWS LLM response parsed as JSON but missing 'action': %r",
+                    parsed,
+                )
+        except Exception as e:
+            logger.warning(
+                "Failed to parse AWS LLM response as JSON: %s. Raw response was: %r",
+                e,
+                clean_json_str,
+            )
+
+        logger.info(
+            "Falling back to action='append_text' with transcript=%r", transcript
+        )
         return {"action": "append_text", "text": transcript}
 
     def process_audio(

@@ -1,5 +1,7 @@
 import json
+import logging
 import os
+import time
 from abc import ABC, abstractmethod
 from io import BytesIO
 from pathlib import Path
@@ -7,6 +9,8 @@ from typing import Any, cast
 
 from faster_whisper import WhisperModel
 from llama_cpp import ChatCompletionRequestMessage, Llama
+
+logger = logging.getLogger("secretary.ai")
 
 
 def get_whisper_capabilities() -> dict:
@@ -66,6 +70,15 @@ class LocalAIClient(AIClient):
         self.whisper_model = whisper_model
         llm_gpu_layers = int(os.environ.get("LLM_GPU_LAYERS", "0"))
 
+        logger.info(
+            "Initializing LocalAIClient (model_path=%s, whisper_model=%s, "
+            "device=%s, compute_type=%s, gpu_layers=%d)",
+            model_path,
+            whisper_model,
+            self.whisper_device,
+            self.whisper_compute_type,
+            llm_gpu_layers,
+        )
         self.whisper = WhisperModel(
             whisper_model,
             device=self.whisper_device,
@@ -83,6 +96,12 @@ class LocalAIClient(AIClient):
         }
 
     def update_whisper(self, device: str, compute_type: str, model: str) -> None:
+        logger.info(
+            "Updating Whisper model to model=%s, device=%s, compute_type=%s",
+            model,
+            device,
+            compute_type,
+        )
         new_whisper = WhisperModel(model, device=device, compute_type=compute_type)
         self.whisper = new_whisper
         self.whisper_device = device
@@ -91,14 +110,24 @@ class LocalAIClient(AIClient):
 
     def reload_glossary(self):
         self.glossary = _load_glossary(self.glossary_path)
+        logger.info("Glossary reloaded (length=%d)", len(self.glossary))
 
     def convert_speech_to_text(self, audio_data: bytes) -> str:
         if not audio_data:
             raise ValueError("No audio data")
+        t0 = time.perf_counter()
         # faster-whisper decodes through PyAV, which sniffs the container
         # itself, so any format ffmpeg understands works here.
         segments, _ = self.whisper.transcribe(BytesIO(audio_data), vad_filter=True)
-        return " ".join(segment.text.strip() for segment in segments)
+        transcript = " ".join(segment.text.strip() for segment in segments)
+        duration_ms = (time.perf_counter() - t0) * 1000
+        logger.info(
+            "Speech to text completed in %.1fms (audio_bytes=%d, transcript=%r)",
+            duration_ms,
+            len(audio_data),
+            transcript,
+        )
+        return transcript
 
     def text_prompt(self, prompt: str, system: str | None = None) -> str:
         messages: list[ChatCompletionRequestMessage] = []
@@ -106,13 +135,23 @@ class LocalAIClient(AIClient):
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
+        logger.debug("Local LLM text_prompt request: messages=%s", messages)
+        t0 = time.perf_counter()
         response = self.llm.create_chat_completion(
             messages=messages,
             stream=False,
         )
-        return cast(str, response["choices"][0]["message"]["content"])  # type: ignore
+        duration_ms = (time.perf_counter() - t0) * 1000
+        result = cast(str, response["choices"][0]["message"]["content"])  # type: ignore
+        logger.debug("Local LLM text_prompt response (%.1fms): %r", duration_ms, result)
+        return result
 
     def clean_note(self, note: str, context: str = "") -> str:
+        logger.info(
+            "Clean note requested (note_len=%d, has_context=%s)",
+            len(note),
+            bool(context.strip()),
+        )
         system = (
             "You are a transcript editor. The user is dictating into an existing note. "
             "Use the note's context to correctly spell names, terms, and references. "
@@ -125,7 +164,17 @@ class LocalAIClient(AIClient):
             prompt = f"Existing note:\n{context}\n\nNew transcript to clean up:\n{note}"
         else:
             prompt = f"Fix grammar, spelling, and missing words:\n{note}"
-        return self.text_prompt(prompt, system=system)
+
+        t0 = time.perf_counter()
+        cleaned = self.text_prompt(prompt, system=system)
+        duration_ms = (time.perf_counter() - t0) * 1000
+        logger.info(
+            "Clean note completed in %.1fms (output_len=%d):\n%s",
+            duration_ms,
+            len(cleaned),
+            cleaned,
+        )
+        return cleaned
 
     def recognize_command(
         self,
@@ -135,6 +184,14 @@ class LocalAIClient(AIClient):
     ) -> dict[str, Any]:
         titles = existing_titles or []
         titles_str = ", ".join(f'"{t}"' for t in titles) if titles else "None"
+
+        logger.info(
+            "Recognize command requested (transcript=%r, "
+            "note_context_len=%d, titles_count=%d)",
+            transcript,
+            len(note_context),
+            len(titles),
+        )
 
         system = (
             "You are an AI assistant for a note-taking app. "
@@ -156,9 +213,25 @@ class LocalAIClient(AIClient):
             system += f"Current note content:\n{note_context.strip()}\n"
 
         prompt = f"User voice transcript: {transcript}"
-        raw_response = self.text_prompt(prompt, system=system).strip()
+        logger.debug(
+            "Recognize command prompt:\n%s\n--- System ---\n%s", prompt, system
+        )
 
+        t0 = time.perf_counter()
+        raw_response = self.text_prompt(prompt, system=system).strip()
+        duration_ms = (time.perf_counter() - t0) * 1000
+
+        logger.info(
+            "Recognize command LLM raw response (%.1fms):\n%s",
+            duration_ms,
+            raw_response,
+        )
+
+        clean_json_str = raw_response
         if "```" in raw_response:
+            logger.debug(
+                "Markdown code block detected in LLM response. Stripping fences."
+            )
             lines = raw_response.splitlines()
             code_lines = []
             in_code = False
@@ -168,11 +241,16 @@ class LocalAIClient(AIClient):
                     continue
                 if in_code:
                     code_lines.append(line)
-            raw_response = "\n".join(code_lines).strip()
+            clean_json_str = "\n".join(code_lines).strip()
 
         try:
-            parsed = json.loads(raw_response)
+            parsed = json.loads(clean_json_str)
             if isinstance(parsed, dict) and "action" in parsed:
+                logger.info(
+                    "Recognize command successfully parsed JSON action=%r: %s",
+                    parsed.get("action"),
+                    parsed,
+                )
                 if parsed["action"] == "add_links" and "links" in parsed and titles:
                     matched_links = []
                     for link in parsed["links"]:
@@ -192,10 +270,25 @@ class LocalAIClient(AIClient):
                             )
                         matched_links.append(best)
                     parsed["links"] = matched_links
+                    logger.info(
+                        "Recognize command resolved links to: %s", matched_links
+                    )
                 return parsed
-        except Exception:
-            pass
+            else:
+                logger.warning(
+                    "LLM response parsed as JSON but missing 'action': %r",
+                    parsed,
+                )
+        except Exception as e:
+            logger.warning(
+                "Failed to parse LLM response as JSON: %s. Raw response was: %r",
+                e,
+                clean_json_str,
+            )
 
+        logger.info(
+            "Falling back to action='append_text' with transcript=%r", transcript
+        )
         return {"action": "append_text", "text": transcript}
 
     def process_audio(

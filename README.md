@@ -237,12 +237,24 @@ sudo systemctl enable --now secretary
 sudo systemctl status secretary
 ```
 
-View logs with `journalctl -u secretary -f`.
+View logs with `journalctl -u secretary -f` or tail the log file at `logs/secretary.log`.
 
 The unit sets `ENVIRONMENT=production`, which tells Secretary to take its
 configuration from systemd's `EnvironmentFile` rather than loading `.env`
 itself. It also enables some light sandboxing; drop those lines if they
 conflict with where your notes live.
+
+## Logging & LLM Diagnostics
+
+Secretary writes logs to both the console (captured by `journalctl` in systemd) and rotating log files (by default in `./logs/secretary.log`).
+
+- **File Rotation & Retention**: Logs rotate daily at midnight into numbered files (`secretary.log.1`, `secretary.log.2`, ..., `secretary.log.30`). Log files older than 30 days are automatically pruned.
+- **LLM Diagnostic Logging**: All LLM requests, raw outputs, response timings, code fence extractions, and JSON command parse attempts/failures are logged with full details.
+- **Configuration**:
+  - `LOG_LEVEL`: Log level (e.g. `INFO`, `DEBUG`, `WARNING`, `ERROR`). Set to `DEBUG` to see full LLM prompt messages.
+  - `LOG_DIR`: Directory where log files are stored (default: `./logs`).
+  - `LOG_FILE`: Explicit path to active log file (default: `./logs/secretary.log`).
+
 
 ## Tailnet hosting
 

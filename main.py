@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -18,12 +19,16 @@ from starlette.types import Scope
 
 from ai_client import AIClient, LocalAIClient, get_whisper_capabilities
 from config import get_settings, save_settings
+from logging_config import setup_logging
 
 # Load .env file for local development; in production, systemd provides env vars
 if os.getenv("ENVIRONMENT") != "production":
     from dotenv import load_dotenv
 
     load_dotenv()
+
+setup_logging()
+logger = logging.getLogger("secretary.main")
 
 NOTES_DIR = Path(os.environ.get("NOTES_DIR", Path(__file__).parent / "notes"))
 GLOSSARY_PATH = NOTES_DIR / "glossary.txt"
@@ -40,9 +45,6 @@ def validate_note_path(filename: str) -> Path:
     if not path.is_relative_to(NOTES_DIR.resolve()):
         raise HTTPException(status_code=400, detail="Invalid filename")
     return path
-
-
-logger = logging.getLogger(__name__)
 
 
 def ensure_notes_dir():
@@ -187,14 +189,34 @@ async def audio_worker():
     while True:
         job = await job_queue.get()
         worker_busy = True
+        t0 = time.perf_counter()
         try:
             loop = asyncio.get_event_loop()
             if isinstance(job, CleanupJob):
+                logger.info(
+                    "Processing cleanup job %s (body_len=%d)",
+                    job.job_id,
+                    len(job.body),
+                )
                 cleaned = await loop.run_in_executor(
                     audio_executor, ai_client.clean_note, job.body
                 )
                 job.future.set_result(cleaned)
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                logger.info(
+                    "Completed cleanup job %s in %.1fms",
+                    job.job_id,
+                    elapsed_ms,
+                )
             else:
+                logger.info(
+                    "Processing audio job %s (mode=%s, audio_bytes=%d, "
+                    "note_filename=%s)",
+                    job.job_id,
+                    job.mode,
+                    len(job.audio_data),
+                    job.note_filename,
+                )
                 note_context = ""
                 existing_titles: list[str] = []
                 if NOTES_DIR.exists():
@@ -234,6 +256,13 @@ async def audio_worker():
                     payload["command"] = job_result["command"]
 
                 await job.websocket.send_json(payload)
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                logger.info(
+                    "Completed audio job %s (mode=%s) in %.1fms",
+                    job.job_id,
+                    job.mode,
+                    elapsed_ms,
+                )
         except Exception as e:
             if isinstance(job, AudioJob):
                 logger.error(
@@ -262,8 +291,10 @@ async def audio_worker():
 
 @asynccontextmanager
 async def lifespan(app):
+    logger.info("Secretary backend starting up")
     worker_task = asyncio.create_task(audio_worker())
     yield
+    logger.info("Secretary backend shutting down")
     worker_task.cancel()
     try:
         await worker_task
