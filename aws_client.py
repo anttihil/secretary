@@ -8,9 +8,11 @@ import re
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import av
+import av.audio.resampler
+import av.container
 
 from ai_client import AIClient
 
@@ -19,7 +21,7 @@ logger = logging.getLogger("secretary.aws")
 
 def _convert_to_pcm16_16k(audio_data: bytes) -> bytes:
     """Resample/convert arbitrary audio (WebM, WAV, etc.) to 16kHz mono 16-bit PCM."""
-    input_container = av.open(io.BytesIO(audio_data))
+    input_container = cast(av.container.InputContainer, av.open(io.BytesIO(audio_data)))
     resampler = av.audio.resampler.AudioResampler(
         format="s16",
         layout="mono",

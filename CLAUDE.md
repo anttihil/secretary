@@ -13,6 +13,7 @@ Secretary is a voice-powered AI assistant that accepts audio via WebSocket, tran
 - **Lint:** `uv run ruff check .`
 - **Format:** `uv run ruff format .`
 - **Lint fix:** `uv run ruff check --fix .`
+- **Type check:** `uv run pyright`
 
 ## Architecture
 
@@ -29,3 +30,4 @@ Secretary is a voice-powered AI assistant that accepts audio via WebSocket, tran
 - AWS services: Amazon Lex V2 (via boto3)
 - OpenAI Whisper for local transcription
 - Ruff for linting/formatting (rules: E, F, I; line-length 88)
+- Pyright for static type checking

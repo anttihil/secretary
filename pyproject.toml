@@ -14,8 +14,22 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["ruff>=0.14.14"]
+dev = [
+    "pyright>=1.1.390",
+    "ruff>=0.14.14",
+]
 aws = ["boto3>=1.42.39"]
+
+[tool.pyright]
+include = ["."]
+exclude = [
+    "client",
+    "static",
+    "**/__pycache__",
+    ".venv",
+]
+venvPath = "."
+venv = ".venv"
 
 [tool.ruff]
 line-length = 88

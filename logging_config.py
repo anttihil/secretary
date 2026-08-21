@@ -97,11 +97,14 @@ def setup_logging(
     else:
         log_file = Path(log_file)
 
+    resolved_level: int
     if log_level is None:
         log_level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
-        log_level = getattr(logging, log_level_name, logging.INFO)
+        resolved_level = getattr(logging, log_level_name, logging.INFO)
     elif isinstance(log_level, str):
-        log_level = getattr(logging, log_level.upper(), logging.INFO)
+        resolved_level = getattr(logging, log_level.upper(), logging.INFO)
+    else:
+        resolved_level = log_level
 
     # Ensure log directory exists
     log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -111,14 +114,14 @@ def setup_logging(
     formatter = logging.Formatter(fmt=log_format, datefmt=date_format)
 
     root_logger = logging.getLogger()
-    root_logger.setLevel(log_level)
+    root_logger.setLevel(resolved_level)
 
     # Avoid duplicate handlers if setup_logging is invoked more than once
     existing_handler_types = {type(h) for h in root_logger.handlers}
 
     if logging.StreamHandler not in existing_handler_types:
         console_handler = logging.StreamHandler()
-        console_handler.setLevel(log_level)
+        console_handler.setLevel(resolved_level)
         console_handler.setFormatter(formatter)
         root_logger.addHandler(console_handler)
 
@@ -128,7 +131,7 @@ def setup_logging(
             backup_count=backup_count,
             encoding="utf-8",
         )
-        file_handler.setLevel(log_level)
+        file_handler.setLevel(resolved_level)
         file_handler.setFormatter(formatter)
         root_logger.addHandler(file_handler)
 

@@ -35,7 +35,7 @@ class AIClient(ABC):
     @abstractmethod
     def recognize_command(
         self,
-        transcript: str,
+        transcript_or_audio: str | bytes,
         note_context: str = "",
         existing_titles: list[str] | None = None,
     ) -> dict[str, Any]:
@@ -178,10 +178,15 @@ class LocalAIClient(AIClient):
 
     def recognize_command(
         self,
-        transcript: str,
+        transcript_or_audio: str | bytes,
         note_context: str = "",
         existing_titles: list[str] | None = None,
     ) -> dict[str, Any]:
+        transcript = (
+            self.convert_speech_to_text(transcript_or_audio)
+            if isinstance(transcript_or_audio, bytes)
+            else transcript_or_audio
+        )
         titles = existing_titles or []
         titles_str = ", ".join(f'"{t}"' for t in titles) if titles else "None"
 
