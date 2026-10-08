@@ -983,3 +983,15 @@ button:disabled {
     min-height: 44px;
   }
 }
+.recording-queue {
+  border-bottom: 1px solid var(--ink-faded, #aaa);
+  padding: 0.6rem 1rem;
+  font-size: 0.85rem;
+}
+.recording-queue summary { cursor: pointer; }
+.recording-queue ul { list-style: none; padding: 0; max-height: 30vh; overflow-y: auto; }
+.recording-job { border-top: 1px solid #ccc; padding: 0.6rem 0; overflow-wrap: anywhere; }
+.job-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.3rem; }
+.job-status { font-style: italic; }
+.job-error { color: var(--ink-red, #900); margin: 0.3rem 0; overflow-wrap: anywhere; }
+.capture-controls { display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0.5rem 1rem; align-items: center; }

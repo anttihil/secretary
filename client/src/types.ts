@@ -1,8 +1,11 @@
 export interface NoteListItem {
+  id: string;
   filename: string;
   title: string;
   created: string;
   updated: string;
+  localOnly?: boolean;
+  directory?: string;
 }
 
 export interface Note extends NoteListItem {
@@ -58,3 +61,28 @@ export interface WsMessage {
   message?: string;
 }
 
+export type JobStatus = "queued" | "transcribing" | "saving" | "succeeded" | "failed";
+
+export interface RecordingJob {
+  id: string;
+  note_id: string | null;
+  mode: "note" | "command";
+  status: JobStatus;
+  saved_note_id: string | null;
+  error: string | null;
+  result: { transcript?: string; result?: string; command?: CommandResult } | null;
+}
+
+export interface LocalRecording {
+  id: string;
+  note_id: string | null;
+  title: string;
+  mode: "note" | "command";
+  created: string;
+  audio?: Blob;
+  status: JobStatus | "awaiting_upload" | "uploading";
+  accepted: boolean;
+  cacheRefreshed?: boolean;
+  error?: string;
+  nextAttempt?: number;
+}

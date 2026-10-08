@@ -1,9 +1,11 @@
 import asyncio
+import json
 import logging
 import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -12,7 +14,16 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Response,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.types import Scope
@@ -20,6 +31,7 @@ from starlette.types import Scope
 from ai_client import AIClient, LocalAIClient, get_whisper_capabilities
 from config import get_settings, save_settings
 from logging_config import setup_logging
+from recording_jobs import RecordingStore
 
 # Load .env file for local development; in production, systemd provides env vars
 if os.getenv("ENVIRONMENT") != "production":
@@ -147,6 +159,52 @@ def format_frontmatter(metadata: dict[str, str], body: str) -> str:
     return front + "\n" + body
 
 
+def write_note(path: Path, metadata: dict[str, str], body: str) -> None:
+    """Atomically persist body and recording receipts in the same file replacement."""
+    fd, temporary = tempfile.mkstemp(prefix=".secretary-", dir=path.parent)
+    try:
+        if path.exists():
+            os.chmod(temporary, path.stat().st_mode & 0o777)
+        with os.fdopen(fd, "w") as output:
+            output.write(format_frontmatter(metadata, body))
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+        if os.name == "posix":
+            directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def read_note(path: Path) -> tuple[dict[str, str], str]:
+    metadata, body = parse_frontmatter(path.read_text())
+    if "id" not in metadata:
+        metadata["id"] = str(uuid.uuid4())
+        write_note(path, metadata, body)
+    return metadata, body
+
+
+def find_note(note_id: str) -> Path | None:
+    if NOTES_DIR.exists():
+        for path in NOTES_DIR.rglob("*.md"):
+            if not is_excluded_note(path) and read_note(path)[0]["id"] == note_id:
+                return path
+    return None
+
+
+def note_response(path: Path) -> dict[str, str]:
+    metadata, body = read_note(path)
+    return {
+        **metadata,
+        "filename": str(path.resolve().relative_to(NOTES_DIR.resolve())),
+        "body": body,
+    }
+
+
 def create_ai_client() -> AIClient:
     client = os.environ.get("AI_CLIENT", "local")
     settings = get_settings()
@@ -191,11 +249,94 @@ class CleanupJob:
     future: asyncio.Future
 
 
-job_queue: asyncio.Queue[AudioJob | CleanupJob] = asyncio.Queue()
+@dataclass
+class RecordingJob:
+    job_id: str
+
+
+job_queue: asyncio.Queue[AudioJob | CleanupJob | RecordingJob] = asyncio.Queue()
+recording_store = RecordingStore(NOTES_DIR / ".secretary")
 audio_executor = ThreadPoolExecutor(max_workers=1)
 worker_busy = False
 
 ai_client = create_ai_client()
+
+
+async def process_recording(recording_id: str):
+    row = recording_store.get(recording_id)
+    if not row or row["status"] not in ("queued", "saving"):
+        return
+    logger.info("Processing durable recording %s (mode=%s)", recording_id, row["mode"])
+    result = json.loads(row["result"]) if row["result"] else None
+    if result is None:
+        recording_store.update(recording_id, "transcribing", error=None)
+        path = find_note(row["note_id"]) if row["note_id"] else None
+        if row["note_id"] and not path:
+            raise ValueError("The target note was deleted")
+        context = read_note(path)[1] if path else ""
+        titles = [
+            read_note(p)[0].get("title", "")
+            for p in NOTES_DIR.rglob("*.md")
+            if not is_excluded_note(p)
+        ]
+        result = await asyncio.get_running_loop().run_in_executor(
+            audio_executor,
+            ai_client.process_audio,
+            row["audio"],
+            row["mode"],
+            context,
+            titles,
+        )
+        recording_store.update(recording_id, "saving", result=json.dumps(result))
+
+    command = result.get("command") if row["mode"] == "command" else None
+    if command and command.get("action") == "create_note":
+        title = str(command.get("title") or "").strip()
+        if not title or "\n" in title or "\r" in title:
+            raise ValueError("The command did not provide a valid note title")
+        # The deterministic note ID also makes command creation crash-recoverable.
+        note_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"secretary:{recording_id}"))
+        note = await create_note(CreateNoteRequest(title=title, id=uuid.UUID(note_id)))
+        saved_note_id = note["id"]
+    else:
+        path = find_note(row["note_id"]) if row["note_id"] else None
+        if not path:
+            raise ValueError("Select a target note for this recording")
+        if command and command.get("action") == "add_tags":
+            text = " ".join("#" + str(t).lstrip("#") for t in command.get("tags", []))
+        elif command and command.get("action") == "add_links":
+            text = " ".join(f"[[{link}]]" for link in command.get("links", []))
+        else:
+            text = str(
+                (command or {}).get("text")
+                or result.get("result")
+                or result.get("transcript")
+                or ""
+            ).strip()
+        if not text:
+            raise ValueError(
+                "No speech was recognized. The audio is retained for retry."
+            )
+        metadata, body = read_note(path)
+        receipts = metadata.get("recording_jobs", "").split(",")
+        if recording_id not in receipts:
+            if body and not body.endswith("\n\n"):
+                body += "\n\n"
+            body += text + "\n\n"
+            metadata["recording_jobs"] = ",".join(
+                [receipt for receipt in receipts if receipt] + [recording_id]
+            )
+            metadata["updated"] = datetime.now(timezone.utc).strftime(
+                FRONTMATTER_TIMESTAMP_FMT
+            )
+            write_note(path, metadata, body)
+        saved_note_id = metadata["id"]
+    # If a crash occurs before this transaction, the note's receipt prevents replay.
+    recording_store.update(
+        recording_id, "succeeded", saved_note_id=saved_note_id, error=None, audio=None
+    )
+    logger.info("Saved durable recording %s to note %s", recording_id, saved_note_id)
+    schedule_git_sync()
 
 
 async def audio_worker():
@@ -207,7 +348,9 @@ async def audio_worker():
         t0 = time.perf_counter()
         try:
             loop = asyncio.get_event_loop()
-            if isinstance(job, CleanupJob):
+            if isinstance(job, RecordingJob):
+                await process_recording(job.job_id)
+            elif isinstance(job, CleanupJob):
                 logger.info(
                     "Processing cleanup job %s (body_len=%d)",
                     job.job_id,
@@ -216,7 +359,8 @@ async def audio_worker():
                 cleaned = await loop.run_in_executor(
                     audio_executor, ai_client.clean_note, job.body
                 )
-                job.future.set_result(cleaned)
+                if not job.future.done():
+                    job.future.set_result(cleaned)
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 logger.info(
                     "Completed cleanup job %s in %.1fms",
@@ -289,7 +433,9 @@ async def audio_worker():
                 )
             else:
                 logger.error("Worker error (job %s): %s", job.job_id, e)
-            if isinstance(job, CleanupJob):
+            if isinstance(job, RecordingJob):
+                recording_store.update(job.job_id, "failed", error=str(e))
+            elif isinstance(job, CleanupJob):
                 if not job.future.done():
                     job.future.set_exception(e)
             else:
@@ -307,6 +453,8 @@ async def audio_worker():
 @asynccontextmanager
 async def lifespan(app):
     logger.info("Secretary backend starting up")
+    for recording_id in recording_store.recover():
+        await job_queue.put(RecordingJob(recording_id))
     worker_task = asyncio.create_task(audio_worker())
     yield
     logger.info("Secretary backend shutting down")
@@ -326,6 +474,71 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/api/queue")
 async def queue_status():
     return {"total": job_queue.qsize() + (1 if worker_busy else 0)}
+
+
+@app.post("/api/recordings", status_code=202)
+async def upload_recording(
+    id: uuid.UUID = Form(),
+    mode: str = Form(),
+    audio: UploadFile = File(),
+    note_id: uuid.UUID | None = Form(default=None),
+):
+    if mode not in ("note", "command"):
+        raise HTTPException(400, "Invalid recording mode")
+    if mode == "note" and not note_id:
+        raise HTTPException(400, "A note recording requires a target note")
+    # Bound request memory; whole-recording upload is appropriate for Opus notes.
+    limit = 100 * 1024 * 1024
+    data = bytearray()
+    while chunk := await audio.read(1024 * 1024):
+        data.extend(chunk)
+        if len(data) > limit:
+            raise HTTPException(413, "Recording exceeds the 100 MiB upload limit")
+    if not data:
+        raise HTTPException(400, "Recording is empty")
+    try:
+        row, inserted = recording_store.accept(
+            str(id), str(note_id) if note_id else None, mode, bytes(data)
+        )
+    except ValueError as error:
+        raise HTTPException(409, str(error))
+    if inserted:
+        logger.info(
+            "Accepted recording %s (mode=%s, note_id=%s, audio_bytes=%d)",
+            id,
+            mode,
+            note_id,
+            len(data),
+        )
+        await job_queue.put(RecordingJob(str(id)))
+    return recording_store.public(row)
+
+
+@app.get("/api/recordings/{recording_id}")
+async def get_recording(recording_id: uuid.UUID):
+    row = recording_store.get(str(recording_id))
+    if not row:
+        raise HTTPException(404, "Recording not found")
+    return recording_store.public(row)
+
+
+@app.post("/api/recordings/{recording_id}/retry")
+async def retry_recording(recording_id: uuid.UUID):
+    row = recording_store.get(str(recording_id))
+    if not row:
+        raise HTTPException(404, "Recording not found")
+    if row["status"] == "failed":
+        result = row["result"]
+        if row["error"] and "No speech was recognized" in row["error"]:
+            result = None
+        recording_store.update(
+            str(recording_id),
+            "saving" if result else "queued",
+            result=result,
+            error=None,
+        )
+        await job_queue.put(RecordingJob(str(recording_id)))
+    return recording_store.public(recording_store.get(str(recording_id)) or row)
 
 
 # --- Settings API ---
@@ -377,6 +590,8 @@ async def update_settings_endpoint(req: UpdateSettingsRequest):
 class CreateNoteRequest(BaseModel):
     title: str
     directory: str = ""
+    id: uuid.UUID | None = None
+    body: str = ""
 
 
 class CreateDirectoryRequest(BaseModel):
@@ -412,7 +627,7 @@ async def list_notes():
     note_data = [
         {
             "filename": str(path.resolve().relative_to(resolved)),
-            **parse_frontmatter(path.read_text())[0],
+            **read_note(path)[0],
         }
         for path in note_files
     ]
@@ -439,6 +654,13 @@ async def create_note(req: CreateNoteRequest):
     except OSError:
         raise HTTPException(500, "No notes directory configured.")
 
+    if not req.title.strip() or "\n" in req.title or "\r" in req.title:
+        raise HTTPException(400, "Invalid note title")
+    if req.id:
+        existing = find_note(str(req.id))
+        if existing:
+            return note_response(existing)
+
     if req.directory:
         validate_note_path(req.directory)
         target_dir = NOTES_DIR / req.directory
@@ -454,13 +676,19 @@ async def create_note(req: CreateNoteRequest):
     basename = f"{slugify(req.title)}-{file_timestamp}.md"
 
     metadata = {
+        "id": str(req.id or uuid.uuid4()),
         "title": req.title,
         "created": frontmatter_timestamp,
         "updated": frontmatter_timestamp,
     }
 
     path = target_dir / basename
-    path.write_text(data=format_frontmatter(metadata, ""))
+    # Two offline notes with the same title may sync in the same second.
+    if path.exists():
+        path = target_dir / (
+            f"{slugify(req.title)}-{metadata['id'][:8]}-{file_timestamp}.md"
+        )
+    write_note(path, metadata, req.body)
     schedule_git_sync()
 
     filename = str(path.resolve().relative_to(NOTES_DIR.resolve()))
@@ -472,8 +700,7 @@ async def get_note(filename: str):
     path = validate_note_path(filename)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Note not found")
-    text = path.read_text()
-    metadata, body = parse_frontmatter(text)
+    metadata, body = read_note(path)
     return {"filename": filename, "body": body, **metadata}
 
 
@@ -482,14 +709,14 @@ async def append_to_note(filename: str, req: AppendNoteRequest):
     path = validate_note_path(filename)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Note not found")
-    metadata, body = parse_frontmatter(path.read_text())
+    metadata, body = read_note(path)
     if body and not body.endswith("\n\n"):
         body = body + "\n\n"
     body = body + req.text + "\n\n"
 
     timestamp = datetime.now(timezone.utc).strftime(FRONTMATTER_TIMESTAMP_FMT)
     metadata["updated"] = timestamp
-    path.write_text(format_frontmatter(metadata, body))
+    write_note(path, metadata, body)
     schedule_git_sync()
     return {"filename": filename, "body": body, **metadata}
 
@@ -517,7 +744,7 @@ async def rename_note(filename: str, req: RenameNoteRequest):
     path = validate_note_path(filename)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Note not found")
-    metadata, body = parse_frontmatter(path.read_text())
+    metadata, body = read_note(path)
     m = re.match(r"^(.+)-(\d{8}-\d{6})$", path.stem)
     timestamp_part = (
         m.group(2) if m else datetime.now(timezone.utc).strftime(FILE_TIMESTAMP_FMT)
@@ -530,7 +757,7 @@ async def rename_note(filename: str, req: RenameNoteRequest):
         )
     metadata["title"] = req.title
     metadata["updated"] = datetime.now(timezone.utc).strftime(FRONTMATTER_TIMESTAMP_FMT)
-    path.write_text(format_frontmatter(metadata, body))
+    write_note(path, metadata, body)
     if new_path != path:
         path.rename(new_path)
     schedule_git_sync()
@@ -544,11 +771,11 @@ async def replace_note_body(filename: str, req: ReplaceNoteBodyRequest):
     path = validate_note_path(filename)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Note not found")
-    metadata, _ = parse_frontmatter(path.read_text())
+    metadata, _ = read_note(path)
     timestamp = datetime.now(timezone.utc).strftime(FRONTMATTER_TIMESTAMP_FMT)
     metadata["updated"] = timestamp
     body = req.body if req.body.endswith("\n\n") else req.body + "\n\n"
-    path.write_text(format_frontmatter(metadata, body))
+    write_note(path, metadata, body)
     schedule_git_sync()
     return {"filename": filename, "body": body, **metadata}
 

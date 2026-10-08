@@ -46,6 +46,7 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           mkdir -p dist/secretary
           cp -r main.py ai_client.py aws_client.py config.py \
+                recording_jobs.py logging_config.py \
                 pyproject.toml uv.lock .env.example Makefile \
                 secretary.service README.md LICENSE static dist/secretary/
           mkdir -p dist/secretary/notes && touch dist/secretary/notes/.gitkeep

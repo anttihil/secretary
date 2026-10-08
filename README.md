@@ -1,6 +1,6 @@
 # Secretary
 
-Secretary is a self-hosted dictation tool designed for seamless note-taking. It accepts audio via WebSocket, and transcribes it using Whisper. You can set it up to push the notes to a git remote. Also, there's an option to use a local LLM to clean up your notes. Secretary prioritizes your privacy and full ownership of your data. Everything runs entirely on your own hardware, making it completely free to use (aside from electricity costs).
+Secretary is a self-hosted dictation tool designed for seamless note-taking. It saves recordings on your device, uploads them as durable background jobs when connected, and transcribes them using Whisper. You can set it up to push the notes to a git remote. Also, there's an option to use a local LLM to clean up your notes. Secretary prioritizes your privacy and full ownership of your data. Everything runs entirely on your own hardware, making it completely free to use (aside from electricity costs).
 
 I use this on Tailscale so any device connected to my tailnet can access it from anywhere with an internet connection. This way the web app can be served from my home server while the actual usage is via a mobile browser. There was some initial setup involved: downloading the model file, setting up the Linux service file and installing Tailscale. After that it has been working for months without problems. Amazingly low maintenance for a home brew project!
 
@@ -108,8 +108,9 @@ a network connection: the Whisper model is downloaded from Hugging Face
 the first time it's used (a few hundred MB for the default), and the GGUF file
 is read into memory. Later starts are much faster.
 
-Once it's up, open `http://localhost:8000`, press record, say a sentence and
-stop. A new `.md` file should appear in `./notes`.
+Once it's up, open `http://localhost:8000`, create a note with **+ New**, press
+Record, say a sentence and stop. The recording queue shows upload and processing
+progress, and the transcript is saved to the note in `./notes`.
 
 ### Choosing models
 
@@ -218,6 +219,65 @@ To move Whisper onto the GPU as well, set `WHISPER_DEVICE=cuda` and
 Open `http://localhost:8000` in your browser to use the web UI. See
 [Microphone access needs HTTPS](#microphone-access-needs-https) before trying
 this from another device.
+
+### Offline recording and the background queue
+
+Visit Secretary while connected once so the browser can cache the app. You can
+then reopen it offline, create notes, select cached notes, and record several
+dictations or commands in succession. Press **Stop** for each recording; once
+the local save finishes, you can start the next recording without waiting for
+uploads or transcription. **Cancel recording** discards the active capture.
+
+The **Recording queue** shows each recording's target and delivery state:
+
+- **Saved on device**: audio and its target note ID are committed to IndexedDB.
+  They survive a page reload. New offline notes are stored there too.
+- **Uploading / queued / transcribing / saving**: connectivity has returned and
+  the server is handling the job. Pending uploads are retried automatically.
+- **Saved**: the server has written the result to the original note, even if you
+  have switched notes, renamed/moved that note, or closed the page.
+- **Failed**: the audio remains available for retry or download. A failed job does
+  not block later recordings. An unuploaded recording can be discarded.
+
+Uploads run while the app is open. Browsers supporting **Background Sync** can
+also upload after you close the page; other browsers resume when you reopen
+Secretary. Once accepted, server jobs continue independently of the browser.
+The browser's storage quota limits offline capacity; an unsuccessful local save
+offers retry and audio download rather than claiming the recording is stored.
+Clearing site data removes recordings that have not reached the server. Active
+capture must be stopped and locally saved before closing the page.
+
+Recordings use HTTP uploads with unique IDs, not connection-scoped WebSocket
+sessions. Upload retries return the same job. Processing is serial (one AI
+worker) while capture and uploading can continue. Each upload currently has a
+100 MiB limit; larger recordings remain on the device for download.
+
+Server jobs and pending audio live in `NOTES_DIR/.secretary/jobs.sqlite3`. Keep
+this database with your notes when backing up or moving the server. The hidden
+directory excludes its runtime data from note listings and automatic Git sync.
+Interrupted queued/transcribing/saving jobs resume on startup; successful jobs
+release their audio. Failed jobs retain it for retry. Run one backend process
+(the default `fastapi run` setup) for this filesystem-backed queue.
+
+Notes acquire a stable `id` frontmatter field. Applied recording IDs are stored
+in `recording_jobs` frontmatter alongside the body in an atomic file replacement.
+These receipts prevent duplicate appends if the server restarts after saving
+text but before marking its job complete; retain both fields when editing notes
+outside Secretary.
+
+### Development checks
+
+```bash
+uv run python -m unittest discover -s tests -v
+make check
+make build
+# Also run `npm exec tsc -- --noEmit` in client/.
+```
+
+Persistence tests cover duplicate uploads, restart recovery, interrupted saves,
+stable targets after rename/move, command creation, and continuation after a
+failed job. User-facing changes additionally require real browser verification
+as described in `AGENTS.md`.
 
 ## Running as a Linux service
 

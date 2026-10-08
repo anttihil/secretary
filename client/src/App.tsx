@@ -1,5 +1,8 @@
-import { createSignal, onMount, onCleanup, Show } from "solid-js";
-import type { MigrationResult, Note, NoteListItem, WsMessage } from "./types";
+import { createSignal, createMemo, onMount, onCleanup, Show } from "solid-js";
+import type { MigrationResult, Note, NoteListItem } from "./types";
+import { createRecordingController } from "./recordingController";
+import { cacheNoteList, deleteCachedNote, getCachedNotes, getCachedDirectories, saveCachedNote } from "./offlineStore";
+import RecordingQueue from "./components/RecordingQueue";
 import Sidebar from "./components/Sidebar";
 import NoteView from "./components/NoteView";
 import NewNoteModal from "./components/NewNoteModal";
@@ -10,11 +13,9 @@ import NewDirectoryModal from "./components/NewDirectoryModal";
 import EditableTitle from "./components/EditableTitle";
 import {
   fetchNotes,
-  createNote,
   getNote,
   deleteNote,
   deleteDirectory,
-  appendToNote,
   cleanNote,
   replaceNoteBody,
   renameNote,
@@ -44,8 +45,43 @@ export default function App() {
   const [notes, setNotes] = createSignal<NoteListItem[]>([]);
   const [directories, setDirectories] = createSignal<string[]>([]);
   const [currentNote, setCurrentNote] = createSignal<Note | null>(null);
-  const [status, setStatus] = createSignal("Connecting...");
-  const [isRecording, setIsRecording] = createSignal(false);
+  const [message, setStatus] = createSignal("");
+  const recording = createRecordingController(async (savedNoteId) => {
+    await loadNotes();
+    const selected = currentNote();
+    const selectionVersion = openRequest;
+    if (savedNoteId) {
+      const saved = notes().find((n) => n.id === savedNoteId);
+      if (saved) {
+        const updated = await getNote(saved.filename);
+        await saveCachedNote(updated);
+        if (currentNote()?.id === savedNoteId && openRequest === selectionVersion) {
+          setCurrentNote(updated);
+        }
+      }
+    }
+    if (selected?.localOnly) {
+      const latest = notes().find((n) => n.id === selected.id);
+      if (latest && !latest.localOnly) {
+        const updated = await getNote(latest.filename);
+        await saveCachedNote(updated);
+        if (currentNote()?.id === selected.id && openRequest === selectionVersion) {
+          setCurrentNote(updated);
+        }
+      }
+    }
+  });
+  const isRecording = () => recording.capture().phase === "recording";
+  const captureBusy = () => !isRecording() && !recording.canStart();
+  const status = createMemo(() => {
+    const state = recording.capture();
+    if (state.phase === "recording") return `Recording ${state.mode === "command" ? "command" : "note"}: ${state.title}`;
+    if (state.phase === "requesting_microphone") return "Opening microphone...";
+    if (state.phase === "finalizing") return "Saving recording on device...";
+    if (state.phase === "failed") return state.message;
+    if (message()) return message();
+    return recording.connected() ? "Ready" : "Offline · recordings saved on device";
+  });
   const [showModal, setShowModal] = createSignal(false);
   const [newNoteDir, setNewNoteDir] = createSignal<string | undefined>(
     undefined,
@@ -63,152 +99,42 @@ export default function App() {
     null,
   );
 
-  let ws: WebSocket | undefined;
-  let mediaRecorder: MediaRecorder | undefined;
-
-  function updateCurrentNoteState(updated: Note): void {
-    setNotes(
-      notes().map((n) =>
-        n.filename === updated.filename
-          ? { ...n, updated: updated.updated }
-          : n,
-      ),
-    );
-    setCurrentNote(updated);
+  function startRecording(mode: "note" | "command" = "note"): void {
+    setStatus("");
+    void recording.start(mode, currentNote());
   }
 
-  function connectWebSocket(): void {
-    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    ws = new WebSocket(`${protocol}//${location.host}/ws`);
-
-    ws.onopen = () => setStatus("Ready");
-    ws.onclose = () => {
-      setStatus("Disconnected. Reconnecting...");
-      setTimeout(connectWebSocket, 2000);
-    };
-    ws.onmessage = async (event: MessageEvent<string>) => {
-      const text = event.data;
-      let parsed: WsMessage | null = null;
-      try {
-        parsed = JSON.parse(text) as WsMessage;
-      } catch {}
-
-      if (parsed && parsed.status) {
-        switch (parsed.status) {
-          case "queued":
-            setStatus("Processing audio...");
-            setIsRecording(false);
-            break;
-
-          case "complete": {
-            setIsRecording(false);
-            if (parsed.mode === "command" && parsed.command) {
-              const cmd = parsed.command;
-              if (cmd.action === "add_tags" && cmd.tags && cmd.tags.length > 0) {
-                const formattedTags = cmd.tags
-                  .map((t) => (t.startsWith("#") ? t : `#${t}`))
-                  .join(" ");
-                if (currentNote()) {
-                  const updated = await appendToNote(currentNote()!.filename, formattedTags);
-                  updateCurrentNoteState(updated);
-                }
-                setStatus(`Ready (Added tags: ${formattedTags})`);
-              } else if (cmd.action === "add_links" && cmd.links && cmd.links.length > 0) {
-                const formattedLinks = cmd.links.map((l) => `[[${l}]]`).join(" ");
-                if (currentNote()) {
-                  const updated = await appendToNote(currentNote()!.filename, formattedLinks);
-                  updateCurrentNoteState(updated);
-                }
-                setStatus(`Ready (Added link: ${formattedLinks})`);
-              } else if (cmd.action === "create_note" && cmd.title) {
-                await handleCreateNote(cmd.title, "");
-                setStatus(`Ready (Created note "${cmd.title}")`);
-              } else if (cmd.text || parsed.result) {
-                const textToAppend = cmd.text || parsed.result || "";
-                if (currentNote() && textToAppend) {
-                  const updated = await appendToNote(currentNote()!.filename, textToAppend);
-                  updateCurrentNoteState(updated);
-                }
-                setStatus("Ready");
-              } else {
-                setStatus("Ready");
-              }
-            } else if (currentNote() && (parsed.result || parsed.transcript)) {
-              const textToAppend = parsed.result || parsed.transcript || "";
-              const updated = await appendToNote(currentNote()!.filename, textToAppend);
-              updateCurrentNoteState(updated);
-              setStatus("Ready");
-            } else {
-              setStatus("Ready");
-            }
-            break;
-          }
-
-          case "error":
-            setStatus("Error: " + parsed.message);
-            setIsRecording(false);
-            break;
-        }
-      }
-    };
-  }
-
-  async function startRecording(mode: "note" | "command" = "note"): Promise<void> {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    if (mode === "note" && !currentNote()) return;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      if (mode === "command") {
-        ws.send(currentNote() ? `command:${currentNote()!.filename}` : "command");
-      } else {
-        ws.send(`note:${currentNote()!.filename}`);
-      }
-      mediaRecorder = new MediaRecorder(stream, {
-        mimeType: "audio/webm;codecs=opus",
-      });
-      mediaRecorder.ondataavailable = (e: BlobEvent) => {
-        if (e.data.size > 0 && ws!.readyState === WebSocket.OPEN)
-          ws!.send(e.data);
-      };
-      mediaRecorder.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
-        if (ws && ws.readyState === WebSocket.OPEN) ws.send("stop");
-      };
-      mediaRecorder.start(250);
-      setStatus(mode === "command" ? "Recording command..." : "Recording...");
-      setIsRecording(true);
-    } catch (err) {
-      setStatus("Microphone access denied");
-      console.error("Microphone error:", err);
-    }
-  }
-
-  function stopRecording(): void {
-    setStatus("Processing...");
-    setIsRecording(false);
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
-      // "stop" is sent from onstop, not here: MediaRecorder.stop() flushes its
-      // last chunk from a queued task, so a synchronous send would reach the
-      // server first and that chunk would be dropped.
-      mediaRecorder.stop();
-      return;
-    }
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send("stop");
-  }
+  const stopRecording = () => recording.stop();
+  let openRequest = 0;
 
   async function loadNotes(): Promise<void> {
     try {
       const resp = await fetchNotes();
-      setNotes(resp.notes);
+      await cacheNoteList(resp.notes, resp.directories);
+      const drafts = (await getCachedNotes()).filter((n) => n.localOnly);
+      setNotes([...drafts, ...resp.notes]);
       setDirectories(resp.directories);
-    } catch {}
+    } catch {
+      setNotes(await getCachedNotes());
+      setDirectories(await getCachedDirectories());
+    }
   }
 
   async function handleOpenNote(filename: string): Promise<void> {
+    const request = ++openRequest;
     try {
+      const cached = (await getCachedNotes()).find((n) => n.filename === filename);
+      if (cached?.localOnly || !navigator.onLine) {
+        if (cached && request === openRequest) setCurrentNote(cached);
+        return;
+      }
       const note = await getNote(filename);
-      setCurrentNote(note);
-    } catch {}
+      await saveCachedNote(note);
+      if (request === openRequest) setCurrentNote(note);
+    } catch {
+      const cached = (await getCachedNotes()).find((n) => n.filename === filename);
+      if (cached && request === openRequest) setCurrentNote(cached);
+    }
   }
 
   async function handleCreateNote(
@@ -216,12 +142,19 @@ export default function App() {
     directory: string,
   ): Promise<void> {
     try {
-      const note = await createNote(title, directory || undefined);
-      const newNote: Note = { ...note, body: "" };
+      const id = crypto.randomUUID();
+      const timestamp = new Date().toISOString();
+      const newNote: Note = {
+        id, filename: `${directory ? directory + "/" : ""}offline-${id}.md`,
+        title, directory, localOnly: true, body: "", created: timestamp, updated: timestamp,
+      };
+      await saveCachedNote(newNote);
       setNotes([newNote, ...notes()]);
+      ++openRequest;
       setCurrentNote(newNote);
       setShowModal(false);
-    } catch {}
+      void recording.sync();
+    } catch (error) { setStatus(error instanceof Error ? error.message : "Failed to store new note"); }
   }
 
   function openConfirmModal(
@@ -241,7 +174,8 @@ export default function App() {
     openConfirmModal(`Delete "${note.title}"?`, async () => {
       setShowConfirmModal(false);
       try {
-        await deleteNote(note.filename);
+        if (!note.localOnly) await deleteNote(note.filename);
+        await deleteCachedNote(note.id);
         setNotes(notes().filter((n) => n.filename !== note.filename));
         setCurrentNote(null);
       } catch {}
@@ -254,7 +188,8 @@ export default function App() {
     openConfirmModal(`Delete "${title}"?`, async () => {
       setShowConfirmModal(false);
       try {
-        await deleteNote(filename);
+        if (!note?.localOnly) await deleteNote(filename);
+        if (note) await deleteCachedNote(note.id);
         setNotes(notes().filter((n) => n.filename !== filename));
         if (currentNote()?.filename === filename) setCurrentNote(null);
       } catch {}
@@ -275,6 +210,7 @@ export default function App() {
   }
 
   function handleBack(): void {
+    ++openRequest;
     setCurrentNote(null);
   }
 
@@ -357,6 +293,17 @@ export default function App() {
       : "";
     if (currentDir === directory) return;
     try {
+      if (note.localOnly) {
+        const cached = (await getCachedNotes()).find((n) => n.id === note.id);
+        if (!cached) return;
+        const basename = filename.slice(filename.lastIndexOf("/") + 1);
+        const moved = { ...cached, directory, filename: `${directory ? directory + "/" : ""}${basename}` };
+        await saveCachedNote(moved);
+        setNotes(notes().map((n) => n.id === moved.id ? moved : n));
+        if (currentNote()?.id === moved.id) setCurrentNote(moved);
+        void recording.sync();
+        return;
+      }
       const moved = await moveNote(filename, directory);
       setNotes(
         notes().map((n) =>
@@ -383,7 +330,8 @@ export default function App() {
     const note = currentNote();
     if (!note) return;
     try {
-      const updated = await replaceNoteBody(note.filename, newBody);
+      const updated = note.localOnly ? { ...note, body: newBody } : await replaceNoteBody(note.filename, newBody);
+      await saveCachedNote(updated);
       setCurrentNote(updated);
       setNotes(
         notes().map((n) =>
@@ -401,7 +349,8 @@ export default function App() {
     const note = currentNote();
     if (!note) return;
     try {
-      const updated = await renameNote(note.filename, newTitle);
+      const updated = note.localOnly ? { ...note, title: newTitle } : await renameNote(note.filename, newTitle);
+      await saveCachedNote(updated);
       setCurrentNote(updated);
       setNotes(
         notes().map((n) =>
@@ -425,6 +374,7 @@ export default function App() {
     if (!note) return;
     try {
       const updated = await replaceNoteBody(note.filename, finalText);
+      await saveCachedNote(updated);
       setCurrentNote(updated);
       setNotes(
         notes().map((n) =>
@@ -440,12 +390,15 @@ export default function App() {
   }
 
   onMount(() => {
-    connectWebSocket();
-    loadNotes();
+    void loadNotes();
+    void recording.initialize();
+    if ("serviceWorker" in navigator) {
+      void navigator.serviceWorker.register("/sw.js").catch((error) => console.error("Offline app cache failed:", error));
+    }
   });
 
   onCleanup(() => {
-    ws?.close();
+    recording.dispose();
   });
 
   return (
@@ -476,6 +429,21 @@ export default function App() {
         <div class="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
       </Show>
       <div class="main-panel">
+        <RecordingQueue
+          jobs={recording.jobs()} connected={recording.connected()}
+          storageError={recording.storageError()}
+          onRetry={(id) => void recording.retry(id)}
+          onDiscard={(id) => void recording.discard(id)}
+          onDownload={(id) => void recording.download(id)}
+          onStoreCaptured={() => void recording.storeCaptured()}
+        />
+        <Show when={isRecording()}>
+          <div class="capture-controls">
+            <span>{status()}</span>
+            <button class="btn-stop" onClick={stopRecording}>Stop recording</button>
+            <button onClick={() => recording.cancel()}>Cancel recording</button>
+          </div>
+        </Show>
         <div class="mobile-topbar">
           <button class="btn-menu" onClick={() => setSidebarOpen(true)}>
             ≡
@@ -499,10 +467,10 @@ export default function App() {
                 </button>
               }
             >
-              <button class="btn-record" onClick={() => startRecording("note")}>
+              <button class="btn-record" disabled={captureBusy()} onClick={() => startRecording("note")}>
                 Record
               </button>
-              <button class="btn-record-cmd" onClick={() => startRecording("command")}>
+              <button class="btn-record-cmd" disabled={captureBusy()} onClick={() => startRecording("command")}>
                 Cmd
               </button>
             </Show>
@@ -535,6 +503,7 @@ export default function App() {
             note={currentNote()}
             status={status()}
             isRecording={isRecording()}
+            captureBusy={captureBusy()}
             isCleaning={isCleaning()}
             notes={notes()}
             onRecord={() => startRecording("note")}

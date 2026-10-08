@@ -1,8 +1,11 @@
 import type {
   MigrationResult,
   Note,
+  NoteListItem,
   NotesListResponse,
   Settings,
+  RecordingJob,
+  LocalRecording,
 } from "./types";
 
 function encodeNotePath(filename: string): string {
@@ -21,14 +24,56 @@ export async function fetchNotes(): Promise<NotesListResponse> {
 export async function createNote(
   title: string,
   directory?: string,
-): Promise<{ filename: string; title: string; created: string; updated: string }> {
+  id?: string,
+  body = "",
+): Promise<NoteListItem> {
   const resp = await fetch("/api/notes", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, directory: directory || "" }),
+    body: JSON.stringify({ title, directory: directory || "", id, body }),
+    signal: AbortSignal.timeout(15000),
   });
-  if (!resp.ok) throw new Error("Failed to create note");
+  if (!resp.ok) {
+    const error = await resp.json().catch(() => ({}));
+    throw new ApiError(error.detail || "Failed to create note", resp.status);
+  }
   return resp.json();
+}
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number) { super(message); }
+}
+
+async function recordingResponse(response: Response): Promise<RecordingJob> {
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new ApiError(body.detail || "Recording request failed", response.status);
+  }
+  return response.json();
+}
+
+export async function uploadRecording(recording: LocalRecording): Promise<RecordingJob> {
+  if (!recording.audio) throw new Error("Recording audio is unavailable");
+  const data = new FormData();
+  data.set("id", recording.id);
+  data.set("mode", recording.mode);
+  if (recording.note_id) data.set("note_id", recording.note_id);
+  data.set("audio", recording.audio, "recording.webm");
+  return recordingResponse(await fetch("/api/recordings", {
+    method: "POST", body: data, signal: AbortSignal.timeout(120000),
+  }));
+}
+
+export async function getRecording(id: string): Promise<RecordingJob> {
+  return recordingResponse(await fetch(`/api/recordings/${id}`, {
+    signal: AbortSignal.timeout(15000),
+  }));
+}
+
+export async function retryRecording(id: string): Promise<RecordingJob> {
+  return recordingResponse(await fetch(`/api/recordings/${id}/retry`, {
+    method: "POST", signal: AbortSignal.timeout(15000),
+  }));
 }
 
 export async function getNote(filename: string): Promise<Note> {
