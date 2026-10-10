@@ -423,19 +423,21 @@ export default function App() {
         onDeleteNote={handleDeleteNoteFromSidebar}
         onDeleteDir={handleDeleteDir}
         open={sidebarOpen()}
+        recordingQueue={
+          <RecordingQueue
+            jobs={recording.jobs()} connected={recording.connected()}
+            storageError={recording.storageError()}
+            onRetry={(id) => void recording.retry(id)}
+            onDiscard={(id) => void recording.discard(id)}
+            onDownload={(id) => void recording.download(id)}
+            onStoreCaptured={() => void recording.storeCaptured()}
+          />
+        }
       />
       <Show when={sidebarOpen()}>
         <div class="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
       </Show>
       <div class="main-panel">
-        <RecordingQueue
-          jobs={recording.jobs()} connected={recording.connected()}
-          storageError={recording.storageError()}
-          onRetry={(id) => void recording.retry(id)}
-          onDiscard={(id) => void recording.discard(id)}
-          onDownload={(id) => void recording.download(id)}
-          onStoreCaptured={() => void recording.storeCaptured()}
-        />
         <Show when={isRecording()}>
           <div class="capture-controls">
             <span>{status()}</span>

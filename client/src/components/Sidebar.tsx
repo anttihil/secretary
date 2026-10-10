@@ -1,5 +1,5 @@
 import { For, Show, createSignal, createMemo, createEffect, onMount, onCleanup } from "solid-js";
-import type { Component } from "solid-js";
+import type { Component, JSX } from "solid-js";
 import type { NoteListItem, Note } from "../types";
 import { positionMenu } from "../menuPosition";
 
@@ -31,6 +31,7 @@ interface SidebarProps {
   onDeleteNote: (filename: string) => void;
   onDeleteDir: (path: string) => void;
   open?: boolean;
+  recordingQueue: JSX.Element;
 }
 
 const COLLAPSED_KEY = "secretary-collapsed-dirs";
@@ -312,7 +313,10 @@ const Sidebar: Component<SidebarProps> = (props) => {
   return (
     <div class={`sidebar${props.open ? " open" : ""}`}>
       <div class="sidebar-header">
-        <h2>Notes</h2>
+        <div class="sidebar-heading">
+          <h2>Notes</h2>
+          {props.recordingQueue}
+        </div>
         <div class="sidebar-header-buttons">
           <button class="btn-new-folder" onClick={props.onCreateDirectory}>
             + Folder
