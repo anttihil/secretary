@@ -124,6 +124,8 @@ from the regression matrix.
 - Inspect screenshots for layout/interaction issues at approximately 1440×900
   and 390×844. Check scrolling, sidebar overlays, dialog visibility, clipped
   context menus near viewport edges, and access to record/stop controls.
+  Wait for CSS transitions to finish (check element bounds or animations);
+  removing an overlay does not mean the sidebar has finished sliding away.
 - A mobile viewport verifies responsive layout, not actual mobile microphone,
   codec, or long-press support. State when those require a physical device.
 
@@ -131,8 +133,8 @@ from the regression matrix.
 
 For recording-related changes, exercise:
 
-`UI Record → getUserMedia → MediaRecorder → binary /ws chunks → stop → queued →
-AI processing → complete → frontend REST append → note survives reload`.
+`UI Record → getUserMedia → MediaRecorder → Stop → IndexedDB → multipart POST
+/api/recordings → queued → AI processing → server save → succeeded → reload`.
 
 For Chromium automation, launch with a known spoken WAV fixture:
 
@@ -156,15 +158,22 @@ Important implementation details:
 - Create/select a note before normal dictation; the current frontend does not
   automatically create a note from note-mode recording.
 - `MediaRecorder.stop()` flushes its final chunk asynchronously; the frontend
-  sends `stop` from `onstop`. Short recordings are especially important for
+  stores the Blob from `onstop`. Short recordings are especially important for
   detecting dropped final chunks.
-- The WebSocket sends a text recording acknowledgment and JSON `queued`,
-  `complete`, or `error` messages. Correlate processing with `job_id` where
-  available and observe the eventual REST save, not only a `complete` message.
-- Command mode supports structured actions including tags, links, and note
-  creation. Verify the action is reflected in persisted note data.
-- Test permission denial in a separate context without automatic grant. Assert
-  the microphone error state, usable controls, and no unexpected note mutation.
+- Correlate HTTP jobs by recording ID; assert `succeeded` and persisted content.
+  Recordings are dictation-only; unsupported modes must be rejected.
+- Chromium loops fake audio files. Pad speech with silence beyond the capture
+  duration before asserting one occurrence; repeated fixture speech is not a
+  duplicate save.
+- Playwright may return `None` for multipart `request.post_data_buffer`. Observe
+  FormData mode and Blob size with a pass-through `fetch` wrapper, or inspect
+  backend job/log evidence; do not assume the raw request body is available.
+- Test permission denial in a separate browser without
+  `--use-fake-ui-for-media-stream` (it can override context permissions). CDP
+  `Browser.setPermission` uses descriptor name `microphone`, not `audioCapture`.
+  Inspect the actual exception: headless Chromium may return `NotSupportedError`
+  rather than `NotAllowedError`; report the error path actually exercised.
+  Assert usable controls and no unexpected note mutation.
 - Test disconnect/reconnect and failed processing when relevant. Do not mistake
   an expected injected error for an unrelated application exception.
 
