@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 
 from fastapi import HTTPException, UploadFile
 
+from backend import note_storage, paths
 from recording_jobs import RecordingStore
 
 
@@ -64,30 +65,36 @@ class SavingTests(unittest.IsolatedAsyncioTestCase):
             "transcript": "First paragraph",
             "result": "First paragraph",
         }
+        self.enterContext(patch.object(paths, "NOTES_DIR", root))
         with patch.dict(
             os.environ,
             {"AI_CLIENT": "local", "LLM_MODEL_PATH": "unused", "NOTES_DIR": str(root)},
         ):
             with patch("ai_client.LocalAIClient", return_value=fake_ai):
-                self.main: Any = importlib.import_module("main")
-        self.main.NOTES_DIR = root
-        self.main.recording_store = RecordingStore(root / ".secretary")
-        self.main.ai_client = fake_ai
-        self.main.job_queue = asyncio.Queue()
-        self.sync = patch.object(self.main, "schedule_git_sync")
-        self.sync.start()
-        self.addCleanup(self.sync.stop)
+                self.worker: Any = importlib.import_module("backend.worker")
+        self.recordings: Any = importlib.import_module("backend.routes.recordings")
+        self.notes: Any = importlib.import_module("backend.routes.notes")
+        self.directories: Any = importlib.import_module("backend.routes.directories")
+        self.enterContext(
+            patch.object(
+                self.worker, "recording_store", RecordingStore(root / ".secretary")
+            )
+        )
+        self.enterContext(patch.object(self.worker, "ai_client", fake_ai))
+        self.enterContext(patch.object(self.worker, "job_queue", asyncio.Queue()))
+        for module in (self.worker, self.notes, self.directories):
+            self.enterContext(patch.object(module, "schedule_git_sync"))
         self.note_id = uuid.uuid4()
-        self.note = await self.main.create_note(
-            self.main.CreateNoteRequest(title="Target", id=self.note_id)
+        self.note = await self.notes.create_note(
+            self.notes.CreateNoteRequest(title="Target", id=self.note_id)
         )
         self.recording_id = str(uuid.uuid4())
-        self.main.recording_store.accept(
+        self.worker.recording_store.accept(
             self.recording_id, str(self.note_id), "note", b"audio"
         )
 
     async def test_crash_after_note_write_does_not_append_again(self):
-        original_update = self.main.recording_store.update
+        original_update = self.worker.recording_store.update
 
         def crash_before_success(recording_id, status, **values):
             if status == "succeeded":
@@ -95,92 +102,97 @@ class SavingTests(unittest.IsolatedAsyncioTestCase):
             original_update(recording_id, status, **values)
 
         with patch.object(
-            self.main.recording_store, "update", side_effect=crash_before_success
+            self.worker.recording_store, "update", side_effect=crash_before_success
         ):
             with self.assertRaises(RuntimeError):
-                await self.main.process_recording(self.recording_id)
-        path = self.main.find_note(str(self.note_id))
-        self.assertIsNotNone(path)
-        self.assertEqual(self.main.read_note(path)[1], "First paragraph\n\n")
+                await self.worker.process_recording(self.recording_id)
+        path = note_storage.find_note(str(self.note_id))
+        assert path is not None
+        self.assertEqual(note_storage.read_note(path)[1], "First paragraph\n\n")
         self.assertEqual(
-            self.main.recording_store.get(self.recording_id)["status"], "saving"
+            self.worker.recording_store.get(self.recording_id)["status"], "saving"
         )
-        await self.main.process_recording(self.recording_id)
-        self.assertEqual(self.main.read_note(path)[1], "First paragraph\n\n")
-        self.main.ai_client.process_audio.assert_called_once()
-        row = self.main.recording_store.get(self.recording_id)
+        await self.worker.process_recording(self.recording_id)
+        self.assertEqual(note_storage.read_note(path)[1], "First paragraph\n\n")
+        self.worker.ai_client.process_audio.assert_called_once()
+        row = self.worker.recording_store.get(self.recording_id)
         self.assertEqual(row["status"], "succeeded")
         self.assertIsNone(row["audio"])
 
     async def test_renamed_and_moved_note_keeps_job_target(self):
-        renamed = await self.main.rename_note(
-            self.note["filename"], self.main.RenameNoteRequest(title="Renamed")
+        renamed = await self.notes.rename_note(
+            self.note["filename"], self.notes.RenameNoteRequest(title="Renamed")
         )
-        await self.main.create_directory(
-            self.main.CreateDirectoryRequest(path="folder")
+        await self.directories.create_directory(
+            self.directories.CreateDirectoryRequest(path="folder")
         )
-        await self.main.move_note(
-            renamed["filename"], self.main.MoveNoteRequest(directory="folder")
+        await self.notes.move_note(
+            renamed["filename"], self.notes.MoveNoteRequest(directory="folder")
         )
-        await self.main.create_note(
-            self.main.CreateNoteRequest(title="Different selected note")
+        await self.notes.create_note(
+            self.notes.CreateNoteRequest(title="Different selected note")
         )
-        await self.main.process_recording(self.recording_id)
-        path = self.main.find_note(str(self.note_id))
+        await self.worker.process_recording(self.recording_id)
+        path = note_storage.find_note(str(self.note_id))
+        assert path is not None
         self.assertEqual(path.parent.name, "folder")
-        self.assertEqual(self.main.read_note(path)[1], "First paragraph\n\n")
+        self.assertEqual(note_storage.read_note(path)[1], "First paragraph\n\n")
 
     async def test_upload_rejects_unsupported_mode_without_queuing(self):
         recording_id = uuid.uuid4()
         with self.assertRaises(HTTPException) as raised:
-            await self.main.upload_recording(
+            await self.recordings.upload_recording(
                 id=recording_id,
                 mode="command",
                 audio=UploadFile(file=BytesIO(b"audio")),
                 note_id=self.note_id,
             )
         self.assertEqual(raised.exception.status_code, 400)
-        self.assertIsNone(self.main.recording_store.get(str(recording_id)))
-        self.assertTrue(self.main.job_queue.empty())
-        self.main.ai_client.process_audio.assert_not_called()
+        self.assertIsNone(self.worker.recording_store.get(str(recording_id)))
+        self.assertTrue(self.worker.job_queue.empty())
+        self.worker.ai_client.process_audio.assert_not_called()
 
     async def test_same_title_notes_created_in_same_second_do_not_overwrite(self):
-        first = await self.main.create_note(
-            self.main.CreateNoteRequest(title="Repeated")
+        first = await self.notes.create_note(
+            self.notes.CreateNoteRequest(title="Repeated")
         )
-        second = await self.main.create_note(
-            self.main.CreateNoteRequest(title="Repeated")
+        second = await self.notes.create_note(
+            self.notes.CreateNoteRequest(title="Repeated")
         )
         self.assertNotEqual(first["filename"], second["filename"])
-        duplicate = await self.main.create_note(
-            self.main.CreateNoteRequest(title="Repeated", id=uuid.UUID(first["id"]))
+        duplicate = await self.notes.create_note(
+            self.notes.CreateNoteRequest(title="Repeated", id=uuid.UUID(first["id"]))
         )
         self.assertEqual(duplicate["filename"], first["filename"])
 
     async def test_failed_job_does_not_block_following_recordings(self):
         second_id = str(uuid.uuid4())
-        self.main.recording_store.accept(second_id, str(self.note_id), "note", b"good")
-        self.main.ai_client.process_audio.side_effect = [
+        self.worker.recording_store.accept(
+            second_id, str(self.note_id), "note", b"good"
+        )
+        self.worker.ai_client.process_audio.side_effect = [
             ValueError("Invalid audio"),
             {"result": "Second recording", "transcript": "Second recording"},
         ]
-        await self.main.job_queue.put(self.main.RecordingJob(self.recording_id))
-        await self.main.job_queue.put(self.main.RecordingJob(second_id))
-        worker = asyncio.create_task(self.main.audio_worker())
+        await self.worker.job_queue.put(self.worker.RecordingJob(self.recording_id))
+        await self.worker.job_queue.put(self.worker.RecordingJob(second_id))
+        worker = asyncio.create_task(self.worker.audio_worker())
         try:
-            await asyncio.wait_for(self.main.job_queue.join(), timeout=5)
+            await asyncio.wait_for(self.worker.job_queue.join(), timeout=5)
         finally:
             worker.cancel()
             with self.assertRaises(asyncio.CancelledError):
                 await worker
         self.assertEqual(
-            self.main.recording_store.get(self.recording_id)["status"], "failed"
+            self.worker.recording_store.get(self.recording_id)["status"], "failed"
         )
         self.assertEqual(
-            self.main.recording_store.get(second_id)["status"], "succeeded"
+            self.worker.recording_store.get(second_id)["status"], "succeeded"
         )
+        path = note_storage.find_note(str(self.note_id))
+        assert path is not None
         self.assertEqual(
-            self.main.read_note(self.main.find_note(str(self.note_id)))[1],
+            note_storage.read_note(path)[1],
             "Second recording\n\n",
         )
 

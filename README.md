@@ -99,6 +99,22 @@ will fail without the frontend's `node_modules`.
 
 </details>
 
+## Backend layout
+
+`main.py` assembles the FastAPI app and serves the built frontend. Backend code
+is grouped under `backend/`:
+
+- `routes/`: endpoints for notes, directories, migration, recordings, settings,
+  glossary, and WebSocket audio.
+- `note_storage.py`: path validation, frontmatter, and atomic note writes.
+- `worker.py`: shared AI job queue, durable recording processing, and lifecycle.
+- `ai_factory.py`: local/AWS client selection.
+- `git_sync.py`: background note commits and pushes.
+- `paths.py` and `static_files.py`: filesystem locations and frontend caching.
+
+AI implementations, settings persistence, and the recording database remain in
+`ai_client.py`, `aws_client.py`, `config.py`, and `recording_jobs.py`.
+
 ## Setup notes
 
 ### First run
