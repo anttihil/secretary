@@ -71,6 +71,7 @@ const Sidebar: Component<SidebarProps> = (props) => {
   const [draggingItem, setDraggingItem] = createSignal<{ type: "note" | "dir"; path: string } | null>(null);
   const [contextMenu, setContextMenu] = createSignal<ContextMenuState | null>(null);
   let contextMenuRef: HTMLDivElement | undefined;
+  let suppressTouchClick = false;
 
   function clearDragState() {
     setIsDragging(false);
@@ -116,6 +117,52 @@ const Sidebar: Component<SidebarProps> = (props) => {
     setContextMenu({ x: e.clientX, y: e.clientY, type, path });
   }
 
+  function itemInteractions(type: "note" | "dir", path: string, activate: () => void) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let touchPointer: number | undefined;
+    let startX = 0;
+    let startY = 0;
+
+    function cancelHold() {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+
+    onCleanup(cancelHold);
+
+    return {
+      onPointerDown: (e: PointerEvent) => {
+        cancelHold();
+        touchPointer = undefined;
+        if (e.pointerType !== "touch" || !e.isPrimary) return;
+        touchPointer = e.pointerId;
+        startX = e.clientX;
+        startY = e.clientY;
+        timer = setTimeout(() => {
+          timer = undefined;
+          suppressTouchClick = true;
+          setContextMenu({ x: startX, y: startY, type, path });
+        }, 500);
+      },
+      onPointerMove: (e: PointerEvent) => {
+        if (e.pointerId === touchPointer && Math.hypot(e.clientX - startX, e.clientY - startY) > 10) {
+          cancelHold();
+        }
+      },
+      onPointerUp: cancelHold,
+      onPointerCancel: () => {
+        cancelHold();
+        touchPointer = undefined;
+      },
+      onContextMenu: (e: MouseEvent) => {
+        cancelHold();
+        if (touchPointer !== undefined) suppressTouchClick = true;
+        openContextMenu(e, type, path);
+      },
+      onClick: activate,
+    };
+  }
+
   function closeContextMenu(): void {
     setContextMenu(null);
   }
@@ -137,11 +184,26 @@ const Sidebar: Component<SidebarProps> = (props) => {
   }
 
   onMount(() => {
-    function handleDocClick() {
+    function handleDocClick(e: MouseEvent) {
+      // The release click can hit the menu that appeared under the finger.
+      if (suppressTouchClick) {
+        suppressTouchClick = false;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
+      if (contextMenuRef?.contains(e.target as Node)) return;
       closeContextMenu();
     }
-    document.addEventListener("click", handleDocClick);
-    onCleanup(() => document.removeEventListener("click", handleDocClick));
+    function handleDocPointerDown() {
+      suppressTouchClick = false;
+    }
+    document.addEventListener("click", handleDocClick, true);
+    document.addEventListener("pointerdown", handleDocPointerDown, true);
+    onCleanup(() => {
+      document.removeEventListener("click", handleDocClick, true);
+      document.removeEventListener("pointerdown", handleDocPointerDown, true);
+    });
   });
 
   const tree = createMemo(() => {
@@ -185,8 +247,7 @@ const Sidebar: Component<SidebarProps> = (props) => {
     return (
       <div
         class={`note-item${note.filename === props.currentNote?.filename ? " active" : ""}`}
-        onClick={() => props.onOpenNote(note.filename)}
-        onContextMenu={(e) => openContextMenu(e, "note", note.filename)}
+        {...itemInteractions("note", note.filename, () => props.onOpenNote(note.filename))}
         draggable={true}
         onDragStart={(e) => {
           e.dataTransfer!.setData("text/plain", "note:" + note.filename);
@@ -221,8 +282,7 @@ const Sidebar: Component<SidebarProps> = (props) => {
           <div
             class="dir-item"
             style={{ "padding-left": `${depth * 0.75}rem` }}
-            onClick={() => toggleDir(dir.path)}
-            onContextMenu={(e) => openContextMenu(e, "dir", dir.path)}
+            {...itemInteractions("dir", dir.path, () => toggleDir(dir.path))}
             draggable={true}
             onDragStart={(e) => {
               e.stopPropagation();

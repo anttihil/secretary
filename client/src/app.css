@@ -242,6 +242,13 @@ button:disabled {
 }
 
 /* ── Directory tree ── */
+.note-item,
+.dir-item {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .dir-item {
   display: flex;
   align-items: center;
