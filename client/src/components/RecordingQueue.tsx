@@ -36,7 +36,7 @@ export default function RecordingQueue(props: Props) {
         <ul>
           <For each={props.jobs}>{(job) => (
             <li class="recording-job" data-recording-id={job.id} data-status={job.status}>
-              <div><strong>{job.title}</strong> <small>{job.mode === "command" ? "Command" : "Dictation"}</small></div>
+              <div><strong>{job.title}</strong> <small>Dictation</small></div>
               <div class="job-status">{labels[job.status]}</div>
               <Show when={job.error}><div class="job-error">{job.error}</div></Show>
               <div class="job-actions">

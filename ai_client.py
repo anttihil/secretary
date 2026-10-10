@@ -1,11 +1,10 @@
-import json
 import logging
 import os
 import time
 from abc import ABC, abstractmethod
 from io import BytesIO
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from faster_whisper import WhisperModel
 from llama_cpp import ChatCompletionRequestMessage, Llama
@@ -32,24 +31,9 @@ class AIClient(ABC):
     def clean_note(self, note: str, context: str = "") -> str:
         pass
 
-    @abstractmethod
-    def recognize_command(
-        self,
-        transcript_or_audio: str | bytes,
-        note_context: str = "",
-        existing_titles: list[str] | None = None,
-    ) -> dict[str, Any]:
-        pass
-
-    @abstractmethod
-    def process_audio(
-        self,
-        audio_data: bytes,
-        mode: str,
-        note_context: str = "",
-        existing_titles: list[str] | None = None,
-    ) -> dict[str, Any]:
-        pass
+    def process_audio(self, audio_data: bytes) -> dict[str, str]:
+        transcript = self.convert_speech_to_text(audio_data)
+        return {"transcript": transcript, "result": transcript}
 
 
 def _load_glossary(path: Path) -> str:
@@ -175,150 +159,3 @@ class LocalAIClient(AIClient):
             cleaned,
         )
         return cleaned
-
-    def recognize_command(
-        self,
-        transcript_or_audio: str | bytes,
-        note_context: str = "",
-        existing_titles: list[str] | None = None,
-    ) -> dict[str, Any]:
-        transcript = (
-            self.convert_speech_to_text(transcript_or_audio)
-            if isinstance(transcript_or_audio, bytes)
-            else transcript_or_audio
-        )
-        titles = existing_titles or []
-        titles_str = ", ".join(f'"{t}"' for t in titles) if titles else "None"
-
-        logger.info(
-            "Recognize command requested (transcript=%r, "
-            "note_context_len=%d, titles_count=%d)",
-            transcript,
-            len(note_context),
-            len(titles),
-        )
-
-        system = (
-            "You are an AI assistant for a note-taking app. "
-            "Parse the user's spoken voice command into a JSON object.\n"
-            "Respond ONLY with valid JSON, with no markdown code blocks "
-            "or commentary.\n"
-            "Supported actions:\n"
-            '1. "add_tags": User wants to add tags. '
-            'JSON: {"action": "add_tags", "tags": ["python", "coding"]}\n'
-            '2. "add_links": User wants to add links to existing notes. '
-            'JSON: {"action": "add_links", "links": ["Matched Note Title"]}\n'
-            '3. "create_note": User wants to create/make a note. '
-            'JSON: {"action": "create_note", "title": "Grocery List"}\n'
-            '4. "append_text": General dictation/text. '
-            'JSON: {"action": "append_text", "text": "cleaned content"}\n\n'
-            f"Available note titles in workspace: [{titles_str}]\n"
-        )
-        if note_context.strip():
-            system += f"Current note content:\n{note_context.strip()}\n"
-
-        prompt = f"User voice transcript: {transcript}"
-        logger.debug(
-            "Recognize command prompt:\n%s\n--- System ---\n%s", prompt, system
-        )
-
-        t0 = time.perf_counter()
-        raw_response = self.text_prompt(prompt, system=system).strip()
-        duration_ms = (time.perf_counter() - t0) * 1000
-
-        logger.info(
-            "Recognize command LLM raw response (%.1fms):\n%s",
-            duration_ms,
-            raw_response,
-        )
-
-        clean_json_str = raw_response
-        if "```" in raw_response:
-            logger.debug(
-                "Markdown code block detected in LLM response. Stripping fences."
-            )
-            lines = raw_response.splitlines()
-            code_lines = []
-            in_code = False
-            for line in lines:
-                if line.strip().startswith("```"):
-                    in_code = not in_code
-                    continue
-                if in_code:
-                    code_lines.append(line)
-            clean_json_str = "\n".join(code_lines).strip()
-
-        try:
-            parsed = json.loads(clean_json_str)
-            if isinstance(parsed, dict) and "action" in parsed:
-                logger.info(
-                    "Recognize command successfully parsed JSON action=%r: %s",
-                    parsed.get("action"),
-                    parsed,
-                )
-                if parsed["action"] == "add_links" and "links" in parsed and titles:
-                    matched_links = []
-                    for link in parsed["links"]:
-                        link_clean = str(link).strip().lower()
-                        best = next(
-                            (t for t in titles if t.lower() == link_clean), None
-                        )
-                        if not best:
-                            best = next(
-                                (
-                                    t
-                                    for t in titles
-                                    if link_clean in t.lower()
-                                    or t.lower() in link_clean
-                                ),
-                                str(link),
-                            )
-                        matched_links.append(best)
-                    parsed["links"] = matched_links
-                    logger.info(
-                        "Recognize command resolved links to: %s", matched_links
-                    )
-                return parsed
-            else:
-                logger.warning(
-                    "LLM response parsed as JSON but missing 'action': %r",
-                    parsed,
-                )
-        except Exception as e:
-            logger.warning(
-                "Failed to parse LLM response as JSON: %s. Raw response was: %r",
-                e,
-                clean_json_str,
-            )
-
-        logger.info(
-            "Falling back to action='append_text' with transcript=%r", transcript
-        )
-        return {"action": "append_text", "text": transcript}
-
-    def process_audio(
-        self,
-        audio_data: bytes,
-        mode: str,
-        note_context: str = "",
-        existing_titles: list[str] | None = None,
-    ) -> dict[str, Any]:
-        match mode:
-            case "note":
-                transcript = self.convert_speech_to_text(audio_data)
-                return {"transcript": transcript, "result": transcript}
-            case "command":
-                transcript = self.convert_speech_to_text(audio_data)
-                cmd = self.recognize_command(
-                    transcript,
-                    note_context=note_context,
-                    existing_titles=existing_titles,
-                )
-                return {
-                    "transcript": transcript,
-                    "action": cmd.get("action", "append_text"),
-                    "command": cmd,
-                    "result": cmd.get("text") or transcript,
-                }
-            case _:
-                raise ValueError(f"Unknown mode: {mode}")

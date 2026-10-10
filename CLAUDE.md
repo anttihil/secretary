@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Secretary is a voice-powered AI assistant that accepts audio via WebSocket, transcribes it, and processes it through an LLM. It supports two modes: "note" (transcribe and clean up text) and "command" (transcribe and execute as an LLM prompt).
+Secretary is a dictation app that stores recordings on the device, uploads them as durable HTTP jobs, and saves transcripts to Markdown notes. AI cleanup is a separate, explicit action.
 
 ## Commands
 
@@ -17,10 +17,11 @@ Secretary is a voice-powered AI assistant that accepts audio via WebSocket, tran
 
 ## Architecture
 
-- `main.py` - FastAPI app with a WebSocket endpoint (`/ws`) that manages audio recording sessions. Clients send text commands ("note", "command", "stop", "close") and binary audio chunks.
+- `main.py` - FastAPI app with durable recording uploads (`/api/recordings`), note APIs, an AI worker, and a WebSocket dictation endpoint (`/ws`).
+- `recording_jobs.py` - SQLite job storage and restart recovery.
 - `ai_client.py` - Abstract `AIClient` base class with two implementations:
-  - `AWSAIClient` - Uses Amazon Lex V2 (`recognize_utterance` / `lexv2-runtime` and `lexv2-models`) for speech transcription, audio intent/command recognition, automatic bot provisioning, and custom vocabulary.
-  - `LocalAIClient` - Uses OpenAI Whisper locally for speech-to-text. No LLM integration yet (stubs only).
+  - `AWSAIClient` - Uses Amazon Lex V2 for speech transcription, dictation bot provisioning, and custom vocabulary.
+  - `LocalAIClient` - Uses faster-whisper for speech-to-text and llama-cpp-python for explicit cleanup.
 
 
 ## Tech Stack

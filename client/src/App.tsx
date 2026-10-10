@@ -75,7 +75,7 @@ export default function App() {
   const captureBusy = () => !isRecording() && !recording.canStart();
   const status = createMemo(() => {
     const state = recording.capture();
-    if (state.phase === "recording") return `Recording ${state.mode === "command" ? "command" : "note"}: ${state.title}`;
+    if (state.phase === "recording") return `Recording note: ${state.title}`;
     if (state.phase === "requesting_microphone") return "Opening microphone...";
     if (state.phase === "finalizing") return "Saving recording on device...";
     if (state.phase === "failed") return state.message;
@@ -99,9 +99,9 @@ export default function App() {
     null,
   );
 
-  function startRecording(mode: "note" | "command" = "note"): void {
+  function startRecording(): void {
     setStatus("");
-    void recording.start(mode, currentNote());
+    void recording.start(currentNote());
   }
 
   const stopRecording = () => recording.stop();
@@ -412,7 +412,6 @@ export default function App() {
           setSidebarOpen(false);
         }}
         onNewNote={openNewNoteModal}
-        onRecordCommand={() => startRecording("command")}
         onMigrate={handleMigrate}
         onSettings={() => {
           setShowSettingsModal(true);
@@ -467,11 +466,8 @@ export default function App() {
                 </button>
               }
             >
-              <button class="btn-record" disabled={captureBusy()} onClick={() => startRecording("note")}>
+              <button class="btn-record" disabled={captureBusy()} onClick={startRecording}>
                 Record
-              </button>
-              <button class="btn-record-cmd" disabled={captureBusy()} onClick={() => startRecording("command")}>
-                Cmd
               </button>
             </Show>
             <button
@@ -506,8 +502,7 @@ export default function App() {
             captureBusy={captureBusy()}
             isCleaning={isCleaning()}
             notes={notes()}
-            onRecord={() => startRecording("note")}
-            onRecordCommand={() => startRecording("command")}
+            onRecord={startRecording}
             onStop={stopRecording}
             onBack={handleBack}
             onDelete={handleDeleteNote}

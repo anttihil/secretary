@@ -266,6 +266,8 @@ async def process_recording(recording_id: str):
     row = recording_store.get(recording_id)
     if not row or row["status"] not in ("queued", "saving"):
         return
+    if row["mode"] != "note":
+        raise ValueError("Invalid recording mode")
     logger.info("Processing durable recording %s (mode=%s)", recording_id, row["mode"])
     result = json.loads(row["result"]) if row["result"] else None
     if result is None:
@@ -273,64 +275,33 @@ async def process_recording(recording_id: str):
         path = find_note(row["note_id"]) if row["note_id"] else None
         if row["note_id"] and not path:
             raise ValueError("The target note was deleted")
-        context = read_note(path)[1] if path else ""
-        titles = [
-            read_note(p)[0].get("title", "")
-            for p in NOTES_DIR.rglob("*.md")
-            if not is_excluded_note(p)
-        ]
         result = await asyncio.get_running_loop().run_in_executor(
             audio_executor,
             ai_client.process_audio,
             row["audio"],
-            row["mode"],
-            context,
-            titles,
         )
         recording_store.update(recording_id, "saving", result=json.dumps(result))
 
-    command = result.get("command") if row["mode"] == "command" else None
-    if command and command.get("action") == "create_note":
-        title = str(command.get("title") or "").strip()
-        if not title or "\n" in title or "\r" in title:
-            raise ValueError("The command did not provide a valid note title")
-        # The deterministic note ID also makes command creation crash-recoverable.
-        note_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"secretary:{recording_id}"))
-        note = await create_note(CreateNoteRequest(title=title, id=uuid.UUID(note_id)))
-        saved_note_id = note["id"]
-    else:
-        path = find_note(row["note_id"]) if row["note_id"] else None
-        if not path:
-            raise ValueError("Select a target note for this recording")
-        if command and command.get("action") == "add_tags":
-            text = " ".join("#" + str(t).lstrip("#") for t in command.get("tags", []))
-        elif command and command.get("action") == "add_links":
-            text = " ".join(f"[[{link}]]" for link in command.get("links", []))
-        else:
-            text = str(
-                (command or {}).get("text")
-                or result.get("result")
-                or result.get("transcript")
-                or ""
-            ).strip()
-        if not text:
-            raise ValueError(
-                "No speech was recognized. The audio is retained for retry."
-            )
-        metadata, body = read_note(path)
-        receipts = metadata.get("recording_jobs", "").split(",")
-        if recording_id not in receipts:
-            if body and not body.endswith("\n\n"):
-                body += "\n\n"
-            body += text + "\n\n"
-            metadata["recording_jobs"] = ",".join(
-                [receipt for receipt in receipts if receipt] + [recording_id]
-            )
-            metadata["updated"] = datetime.now(timezone.utc).strftime(
-                FRONTMATTER_TIMESTAMP_FMT
-            )
-            write_note(path, metadata, body)
-        saved_note_id = metadata["id"]
+    path = find_note(row["note_id"]) if row["note_id"] else None
+    if not path:
+        raise ValueError("Select a target note for this recording")
+    text = str(result.get("result") or result.get("transcript") or "").strip()
+    if not text:
+        raise ValueError("No speech was recognized. The audio is retained for retry.")
+    metadata, body = read_note(path)
+    receipts = metadata.get("recording_jobs", "").split(",")
+    if recording_id not in receipts:
+        if body and not body.endswith("\n\n"):
+            body += "\n\n"
+        body += text + "\n\n"
+        metadata["recording_jobs"] = ",".join(
+            [receipt for receipt in receipts if receipt] + [recording_id]
+        )
+        metadata["updated"] = datetime.now(timezone.utc).strftime(
+            FRONTMATTER_TIMESTAMP_FMT
+        )
+        write_note(path, metadata, body)
+    saved_note_id = metadata["id"]
     # If a crash occurs before this transaction, the note's receipt prevents replay.
     recording_store.update(
         recording_id, "succeeded", saved_note_id=saved_note_id, error=None, audio=None
@@ -376,30 +347,10 @@ async def audio_worker():
                     len(job.audio_data),
                     job.note_filename,
                 )
-                note_context = ""
-                existing_titles: list[str] = []
-                if NOTES_DIR.exists():
-                    for p in NOTES_DIR.rglob("*.md"):
-                        if not is_excluded_note(p):
-                            try:
-                                meta, _ = parse_frontmatter(p.read_text())
-                                if "title" in meta:
-                                    existing_titles.append(meta["title"])
-                            except Exception:
-                                pass
-
-                if job.note_filename:
-                    note_path = NOTES_DIR / job.note_filename
-                    if note_path.exists():
-                        _, note_context = parse_frontmatter(note_path.read_text())
-
                 job_result = await loop.run_in_executor(
                     audio_executor,
                     ai_client.process_audio,
                     job.audio_data,
-                    job.mode,
-                    note_context,
-                    existing_titles,
                 )
 
                 payload = {
@@ -409,11 +360,6 @@ async def audio_worker():
                     "transcript": job_result.get("transcript", ""),
                     "result": job_result.get("result", ""),
                 }
-                if "action" in job_result:
-                    payload["action"] = job_result["action"]
-                if "command" in job_result:
-                    payload["command"] = job_result["command"]
-
                 await job.websocket.send_json(payload)
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 logger.info(
@@ -483,9 +429,9 @@ async def upload_recording(
     audio: UploadFile = File(),
     note_id: uuid.UUID | None = Form(default=None),
 ):
-    if mode not in ("note", "command"):
+    if mode != "note":
         raise HTTPException(400, "Invalid recording mode")
-    if mode == "note" and not note_id:
+    if not note_id:
         raise HTTPException(400, "A note recording requires a target note")
     # Bound request memory; whole-recording upload is appropriate for Opus notes.
     limit = 100 * 1024 * 1024
@@ -1051,25 +997,6 @@ async def websocket_endpoint(websocket: WebSocket):
                         note_filename = None
                         chunks = []
                         await websocket.send_text("Recording started (note mode)")
-                    case data if data.startswith("command:"):
-                        if recording:
-                            continue
-                        recording = True
-                        mode = "command"
-                        nf = data[8:]
-                        if nf:
-                            validate_note_path(nf)
-                        note_filename = nf or None
-                        chunks = []
-                        await websocket.send_text("Recording started (command mode)")
-                    case "command":
-                        if recording:
-                            continue
-                        recording = True
-                        mode = "command"
-                        note_filename = None
-                        chunks = []
-                        await websocket.send_text("Recording started (command mode)")
                     case "stop":
                         if not recording:
                             continue

@@ -23,7 +23,6 @@ interface SidebarProps {
   currentNote: Note | null;
   onOpenNote: (filename: string) => void;
   onNewNote: (directory?: string) => void;
-  onRecordCommand?: () => void;
   onMigrate: () => void;
   onSettings: () => void;
   onCreateDirectory: () => void;
@@ -261,15 +260,6 @@ const Sidebar: Component<SidebarProps> = (props) => {
           <button class="btn-new-note" onClick={() => props.onNewNote()}>
             + New
           </button>
-          <Show when={props.onRecordCommand}>
-            <button
-              class="btn-record-cmd"
-              onClick={props.onRecordCommand}
-              title="Voice Command"
-            >
-              Cmd
-            </button>
-          </Show>
         </div>
       </div>
       <div class="notes-list">

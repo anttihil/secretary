@@ -224,7 +224,7 @@ this from another device.
 
 Visit Secretary while connected once so the browser can cache the app. You can
 then reopen it offline, create notes, select cached notes, and record several
-dictations or commands in succession. Press **Stop** for each recording; once
+dictations in succession. Press **Stop** for each recording; once
 the local save finishes, you can start the next recording without waiting for
 uploads or transcription. **Cancel recording** discards the active capture.
 
@@ -252,6 +252,10 @@ sessions. Upload retries return the same job. Processing is serial (one AI
 worker) while capture and uploading can continue. Each upload currently has a
 100 MiB limit; larger recordings remain on the device for download.
 
+New recordings are dictation-only. Use **+ New** to create a note, the note
+body's context menu to insert tags or note links, and **Clean up** to edit a
+transcript with AI.
+
 Server jobs and pending audio live in `NOTES_DIR/.secretary/jobs.sqlite3`. Keep
 this database with your notes when backing up or moving the server. The hidden
 directory excludes its runtime data from note listings and automatic Git sync.
@@ -275,7 +279,7 @@ make build
 ```
 
 Persistence tests cover duplicate uploads, restart recovery, interrupted saves,
-stable targets after rename/move, command creation, and continuation after a
+stable targets after rename/move, rejection of unsupported modes, and continuation after a
 failed job. User-facing changes additionally require real browser verification
 as described in `AGENTS.md`.
 
@@ -309,7 +313,7 @@ conflict with where your notes live.
 Secretary writes logs to both the console (captured by `journalctl` in systemd) and rotating log files (by default in `./logs/secretary.log`).
 
 - **File Rotation & Retention**: Logs rotate daily at midnight into numbered files (`secretary.log.1`, `secretary.log.2`, ..., `secretary.log.30`). Log files older than 30 days are automatically pruned.
-- **LLM Diagnostic Logging**: All LLM requests, raw outputs, response timings, code fence extractions, and JSON command parse attempts/failures are logged with full details.
+- **LLM Diagnostic Logging**: Cleanup requests, raw outputs, and response timings are logged with full details.
 - **Configuration**:
   - `LOG_LEVEL`: Log level (e.g. `INFO`, `DEBUG`, `WARNING`, `ERROR`). Set to `DEBUG` to see full LLM prompt messages.
   - `LOG_DIR`: Directory where log files are stored (default: `./logs`).

@@ -42,21 +42,11 @@ export interface Settings {
   cuda_available: boolean;
 }
 
-export interface CommandResult {
-  action: "add_tags" | "add_links" | "create_note" | "append_text";
-  tags?: string[];
-  links?: string[];
-  title?: string;
-  text?: string;
-}
-
 export interface WsMessage {
   status: "queued" | "complete" | "error";
   job_id?: string;
   mode?: string;
   transcript?: string;
-  action?: string;
-  command?: CommandResult;
   result?: string;
   message?: string;
 }
@@ -66,18 +56,18 @@ export type JobStatus = "queued" | "transcribing" | "saving" | "succeeded" | "fa
 export interface RecordingJob {
   id: string;
   note_id: string | null;
-  mode: "note" | "command";
+  mode: "note";
   status: JobStatus;
   saved_note_id: string | null;
   error: string | null;
-  result: { transcript?: string; result?: string; command?: CommandResult } | null;
+  result: { transcript?: string; result?: string } | null;
 }
 
 export interface LocalRecording {
   id: string;
   note_id: string | null;
   title: string;
-  mode: "note" | "command";
+  mode: "note";
   created: string;
   audio?: Blob;
   status: JobStatus | "awaiting_upload" | "uploading";

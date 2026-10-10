@@ -6,7 +6,7 @@ import type { LocalRecording, Note, RecordingJob } from "./types";
 export type CaptureState =
   | { phase: "idle" }
   | { phase: "requesting_microphone" }
-  | { phase: "recording"; title: string; mode: "note" | "command" }
+  | { phase: "recording"; title: string }
   | { phase: "finalizing" }
   | { phase: "failed"; message: string };
 
@@ -118,11 +118,11 @@ export function createRecordingController(onNotesChanged: (savedNoteId?: string)
     } finally { running = false; }
   }
 
-  async function start(mode: "note" | "command", note: Note | null): Promise<void> {
+  async function start(note: Note | null): Promise<void> {
     if (!["idle", "failed"].includes(capture().phase) || unsaved) return;
-    if (mode === "note" && !note) return;
+    if (!note) return;
     const id = crypto.randomUUID();
-    const target = note ? { id: note.id, title: note.title } : null;
+    const target = { id: note.id, title: note.title };
     setCapture({ phase: "requesting_microphone" });
     cancelled = false;
     try {
@@ -143,8 +143,8 @@ export function createRecordingController(onNotesChanged: (savedNoteId?: string)
         chunks.length = 0;
         if (!audio.size) { setCapture({ phase: "failed", message: "Recording was empty" }); return; }
         unsaved = {
-          id, note_id: target?.id || null, title: target?.title || "Voice command",
-          mode, audio, created: new Date().toISOString(), status: "awaiting_upload", accepted: false,
+          id, note_id: target.id, title: target.title,
+          mode: "note", audio, created: new Date().toISOString(), status: "awaiting_upload", accepted: false,
         };
         await storeCaptured();
       };
@@ -153,7 +153,7 @@ export function createRecordingController(onNotesChanged: (savedNoteId?: string)
         if (recorder?.state === "recording") recorder.stop();
       };
       recorder.start(1000);
-      setCapture({ phase: "recording", title: target?.title || "Voice command", mode });
+      setCapture({ phase: "recording", title: target.title });
     } catch (error) {
       stream?.getTracks().forEach((t) => t.stop());
       setCapture({ phase: "failed", message: error instanceof DOMException && error.name === "NotAllowedError" ? "Microphone access denied" : "Unable to start microphone recording" });

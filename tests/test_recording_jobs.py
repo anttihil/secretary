@@ -4,9 +4,12 @@ import os
 import tempfile
 import unittest
 import uuid
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock, patch
+
+from fastapi import HTTPException, UploadFile
 
 from recording_jobs import RecordingStore
 
@@ -43,6 +46,11 @@ class StoreTests(unittest.TestCase):
         self.assertEqual((restarted.get("first") or {})["status"], "queued")
         self.assertEqual((restarted.get("second") or {})["status"], "saving")
         self.assertIsNone((restarted.get("done") or {})["audio"])
+
+    def test_unsupported_modes_cannot_be_accepted(self):
+        with self.assertRaisesRegex(ValueError, "Invalid recording mode"):
+            self.store.accept("unsupported", "note", "command", b"audio")
+        self.assertIsNone(self.store.get("unsupported"))
 
 
 class SavingTests(unittest.IsolatedAsyncioTestCase):
@@ -122,25 +130,19 @@ class SavingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(path.parent.name, "folder")
         self.assertEqual(self.main.read_note(path)[1], "First paragraph\n\n")
 
-    async def test_create_note_command_has_deterministic_identity(self):
-        self.main.ai_client.process_audio.return_value = {
-            "command": {"action": "create_note", "title": "Voice note"}
-        }
-        command_id = str(uuid.uuid4())
-        self.main.recording_store.accept(command_id, None, "command", b"command")
-        await self.main.process_recording(command_id)
-        row = self.main.recording_store.get(command_id)
-        self.main.recording_store.update(command_id, "saving")
-        await self.main.process_recording(command_id)
-        matching = [
-            p
-            for p in self.main.NOTES_DIR.rglob("*.md")
-            if self.main.read_note(p)[0].get("title") == "Voice note"
-        ]
-        self.assertEqual(len(matching), 1)
-        self.assertEqual(
-            self.main.read_note(matching[0])[0]["id"], row["saved_note_id"]
-        )
+    async def test_upload_rejects_unsupported_mode_without_queuing(self):
+        recording_id = uuid.uuid4()
+        with self.assertRaises(HTTPException) as raised:
+            await self.main.upload_recording(
+                id=recording_id,
+                mode="command",
+                audio=UploadFile(file=BytesIO(b"audio")),
+                note_id=self.note_id,
+            )
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertIsNone(self.main.recording_store.get(str(recording_id)))
+        self.assertTrue(self.main.job_queue.empty())
+        self.main.ai_client.process_audio.assert_not_called()
 
     async def test_same_title_notes_created_in_same_second_do_not_overwrite(self):
         first = await self.main.create_note(

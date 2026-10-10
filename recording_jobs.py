@@ -48,6 +48,8 @@ class RecordingStore:
     def accept(
         self, recording_id: str, note_id: str | None, mode: str, audio: bytes
     ) -> tuple[dict[str, Any], bool]:
+        if mode != "note":
+            raise ValueError("Invalid recording mode")
         digest = hashlib.sha256(audio).hexdigest()
         with self.connect() as db:
             inserted = (

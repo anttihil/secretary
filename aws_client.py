@@ -1,10 +1,8 @@
 import base64
 import gzip
 import io
-import json
 import logging
 import os
-import re
 import time
 import uuid
 from pathlib import Path
@@ -36,65 +34,20 @@ def _convert_to_pcm16_16k(audio_data: bytes) -> bytes:
     return output_pcm.getvalue()
 
 
-def _decode_lex_field(value: str | bytes | None, is_json: bool = True) -> Any:
-    """Decode and decompress base64/gzip encoded fields from recognize_utterance."""
+def _decode_transcript(value: str | bytes | None) -> str:
+    """Decode the base64/gzip transcript returned by recognize_utterance."""
     if not value:
-        return {} if is_json else ""
-    if isinstance(value, (dict, list)):
-        return value
+        return ""
     try:
-        if isinstance(value, str):
-            raw_bytes = base64.b64decode(value)
-        else:
-            raw_bytes = value
+        raw_bytes = base64.b64decode(value) if isinstance(value, str) else value
         try:
-            decompressed = gzip.decompress(raw_bytes)
-        except Exception:
-            decompressed = raw_bytes
-        if is_json:
-            return json.loads(decompressed.decode("utf-8"))
-        else:
-            return decompressed.decode("utf-8")
+            raw_bytes = gzip.decompress(raw_bytes)
+        except (OSError, EOFError):
+            pass
+        return raw_bytes.decode("utf-8")
     except Exception as e:
-        logger.debug("Lex field decode failed, returning raw/fallback: %s", e)
-        if is_json and isinstance(value, str):
-            try:
-                return json.loads(value)
-            except Exception:
-                return {}
-        return value if not is_json else {}
-
-
-def _extract_slot_values(slot: dict[str, Any] | None) -> list[str]:
-    """Extract string values recursively from an Amazon Lex V2 slot structure."""
-    if not slot or not isinstance(slot, dict):
-        return []
-    values: list[str] = []
-    if "values" in slot and isinstance(slot["values"], list):
-        for sub_slot in slot["values"]:
-            values.extend(_extract_slot_values(sub_slot))
-    if "value" in slot and isinstance(slot["value"], dict):
-        val_dict = slot["value"]
-        if "resolvedValues" in val_dict and val_dict["resolvedValues"]:
-            for rv in val_dict["resolvedValues"]:
-                if rv:
-                    values.append(str(rv))
-        elif val_dict.get("interpretedValue"):
-            values.append(str(val_dict["interpretedValue"]))
-        elif val_dict.get("originalValue"):
-            values.append(str(val_dict["originalValue"]))
-    return [v.strip() for v in values if v and v.strip()]
-
-
-def _get_slot(slots: dict[str, Any] | None, *names: str) -> dict[str, Any] | None:
-    """Find a slot by one or more candidate names (case-insensitive)."""
-    if not slots:
-        return None
-    for name in names:
-        for k, v in slots.items():
-            if k.lower() == name.lower() and v is not None:
-                return v
-    return None
+        logger.debug("Transcript decode failed, returning raw value: %s", e)
+        return value if isinstance(value, str) else value.decode("utf-8")
 
 
 class AWSAIClient(AIClient):
@@ -225,7 +178,7 @@ class AWSAIClient(AIClient):
 
         resp = self.lex_models.create_bot(
             botName=self.bot_name,
-            description="Secretary Voice Command Bot",
+            description="Secretary Dictation Bot",
             roleArn=role_arn,
             dataPrivacy={"childDirected": False},
             idleSessionTTLInSeconds=300,
@@ -261,111 +214,50 @@ class AWSAIClient(AIClient):
                 raise RuntimeError(f"Bot locale creation failed: {loc_status}")
             time.sleep(1)
 
-        intents_config = [
-            {
-                "name": "AddTags",
-                "description": "Tag a note",
-                "slot_name": "Tags",
-                "prompt": "What tags would you like to add?",
-                "utterances": [
-                    "add tags {Tags}",
-                    "add tag {Tags}",
-                    "tag as {Tags}",
-                    "tag note {Tags}",
-                    "tag this note {Tags}",
-                    "tags {Tags}",
-                    "tag {Tags}",
-                    "set tags {Tags}",
-                ],
-            },
-            {
-                "name": "AddLinks",
-                "description": "Link to an existing note",
-                "slot_name": "Link",
-                "prompt": "What note would you like to link?",
-                "utterances": [
-                    "add link {Link}",
-                    "add links {Link}",
-                    "link to {Link}",
-                    "link note {Link}",
-                    "link this to {Link}",
-                    "link {Link}",
-                    "add link to {Link}",
-                ],
-            },
-            {
-                "name": "CreateNote",
-                "description": "Create a new note",
-                "slot_name": "Title",
-                "prompt": "What is the note title?",
-                "utterances": [
-                    "create note {Title}",
-                    "create a note {Title}",
-                    "create note titled {Title}",
-                    "make note {Title}",
-                    "make a note {Title}",
-                    "new note {Title}",
-                    "create new note {Title}",
-                    "start note {Title}",
-                ],
-            },
-            {
-                "name": "AppendText",
-                "description": "Append text or general dictation",
-                "slot_name": "Text",
-                "prompt": "What text would you like to append?",
-                "utterances": [
-                    "append {Text}",
-                    "append text {Text}",
-                    "add text {Text}",
-                    "dictate {Text}",
-                    "write {Text}",
-                    "note {Text}",
-                ],
-            },
-        ]
-
-        for ic in intents_config:
-            logger.info("Creating intent %s...", ic["name"])
-            int_resp = self.lex_models.create_intent(
-                botId=bot_id,
-                botVersion="DRAFT",
-                localeId=self.locale_id,
-                intentName=ic["name"],
-                description=ic["description"],
-                sampleUtterances=[{"utterance": u} for u in ic["utterances"]],
-            )
-            intent_id = int_resp["intentId"]
-
-            slot_resp = self.lex_models.create_slot(
-                botId=bot_id,
-                botVersion="DRAFT",
-                localeId=self.locale_id,
-                intentId=intent_id,
-                slotName=ic["slot_name"],
-                slotTypeName="AMAZON.FreeFormInput",
-                valueElicitationSetting={
-                    "slotConstraint": "Optional",
-                    "promptSpecification": {
-                        "messageGroupsList": [
-                            {"message": {"plainTextMessage": {"value": ic["prompt"]}}}
-                        ],
-                        "maxRetries": 2,
-                    },
+        # Lex needs a built locale for speech recognition; only provision dictation.
+        utterances = [{"utterance": "dictate {Text}"}, {"utterance": "write {Text}"}]
+        intent = self.lex_models.create_intent(
+            botId=bot_id,
+            botVersion="DRAFT",
+            localeId=self.locale_id,
+            intentName="Dictation",
+            description="Transcribe dictated text",
+            sampleUtterances=utterances,
+        )
+        intent_id = intent["intentId"]
+        slot = self.lex_models.create_slot(
+            botId=bot_id,
+            botVersion="DRAFT",
+            localeId=self.locale_id,
+            intentId=intent_id,
+            slotName="Text",
+            slotTypeName="AMAZON.FreeFormInput",
+            valueElicitationSetting={
+                "slotConstraint": "Optional",
+                "promptSpecification": {
+                    "messageGroupsList": [
+                        {
+                            "message": {
+                                "plainTextMessage": {
+                                    "value": "What text would you like to dictate?"
+                                }
+                            }
+                        }
+                    ],
+                    "maxRetries": 2,
                 },
-            )
-            slot_id = slot_resp["slotId"]
-
-            self.lex_models.update_intent(
-                botId=bot_id,
-                botVersion="DRAFT",
-                localeId=self.locale_id,
-                intentId=intent_id,
-                intentName=ic["name"],
-                description=ic["description"],
-                sampleUtterances=[{"utterance": u} for u in ic["utterances"]],
-                slotPriorities=[{"priority": 1, "slotId": slot_id}],
-            )
+            },
+        )
+        self.lex_models.update_intent(
+            botId=bot_id,
+            botVersion="DRAFT",
+            localeId=self.locale_id,
+            intentId=intent_id,
+            intentName="Dictation",
+            description="Transcribe dictated text",
+            sampleUtterances=utterances,
+            slotPriorities=[{"priority": 1, "slotId": slot["slotId"]}],
+        )
 
         logger.info("Building bot locale %s for bot %s...", self.locale_id, bot_id)
         self.lex_models.build_bot_locale(
@@ -460,7 +352,7 @@ class AWSAIClient(AIClient):
         )
         duration_ms = (time.perf_counter() - t0) * 1000
 
-        transcript = _decode_lex_field(response.get("inputTranscript"), is_json=False)
+        transcript = _decode_transcript(response.get("inputTranscript"))
         logger.info(
             "Amazon Lex transcription completed in %.1fms: transcript=%r",
             duration_ms,
@@ -475,354 +367,3 @@ class AWSAIClient(AIClient):
             bool(context.strip()),
         )
         return note
-
-    def _recognize_command_utterance(
-        self,
-        audio_data: bytes,
-        note_context: str = "",
-        existing_titles: list[str] | None = None,
-    ) -> dict[str, Any]:
-        titles = existing_titles or []
-        session_id = str(uuid.uuid4())
-        pcm_bytes = _convert_to_pcm16_16k(audio_data)
-
-        logger.info(
-            "Calling Lex recognize_utterance (bot_id=%s, alias_id=%s, "
-            "raw_bytes=%d, pcm_bytes=%d, session_id=%s)",
-            self.bot_id,
-            self.bot_alias_id,
-            len(audio_data),
-            len(pcm_bytes),
-            session_id,
-        )
-        t0 = time.perf_counter()
-
-        kwargs: dict[str, Any] = {
-            "botId": self.bot_id,
-            "botAliasId": self.bot_alias_id,
-            "localeId": self.locale_id,
-            "sessionId": session_id,
-            "requestContentType": "audio/l16; rate=16000; channels=1",
-            "responseContentType": "text/plain; charset=utf-8",
-            "inputStream": pcm_bytes,
-        }
-        if note_context:
-            raw_session = json.dumps(
-                {"sessionAttributes": {"note_context": note_context[:1000]}}
-            )
-            compressed = gzip.compress(raw_session.encode("utf-8"))
-            kwargs["sessionState"] = base64.b64encode(compressed).decode("utf-8")
-
-        response = self.lex_runtime.recognize_utterance(**kwargs)
-        duration_ms = (time.perf_counter() - t0) * 1000
-
-        input_transcript = _decode_lex_field(
-            response.get("inputTranscript"), is_json=False
-        )
-        session_state = _decode_lex_field(response.get("sessionState"), is_json=True)
-        interpretations = _decode_lex_field(
-            response.get("interpretations"), is_json=True
-        )
-
-        logger.info(
-            "Amazon Lex recognize_utterance completed in %.1fms (transcript=%r)",
-            duration_ms,
-            input_transcript,
-        )
-
-        intent = session_state.get("intent")
-        if not intent and isinstance(interpretations, list) and interpretations:
-            intent = interpretations[0].get("intent")
-
-        if not intent:
-            logger.info(
-                "No intent detected in Lex response; falling back to append_text"
-            )
-            return {
-                "action": "append_text",
-                "text": input_transcript,
-                "transcript": input_transcript,
-            }
-
-        intent_name = intent.get("name", "")
-        slots = intent.get("slots") or {}
-        normalized = (
-            intent_name.lower().replace("_", "").replace("-", "").replace(" ", "")
-        )
-        logger.info(
-            "Lex recognized intent=%r (normalized=%r) with slots=%r",
-            intent_name,
-            normalized,
-            slots,
-        )
-
-        result: dict[str, Any] = {"transcript": input_transcript}
-
-        if normalized in ("addtags", "addtag", "tags", "tag", "tagtarget"):
-            raw_tags = _extract_slot_values(
-                _get_slot(slots, "tags", "tag", "items", "values")
-            )
-            parsed_tags: list[str] = []
-            for tag in raw_tags:
-                cleaned = [
-                    t.strip().lstrip("#")
-                    for t in re.split(r",|\sand\s", tag)
-                    if t.strip()
-                ]
-                parsed_tags.extend(cleaned)
-            result.update({"action": "add_tags", "tags": parsed_tags or raw_tags})
-
-        elif normalized in ("addlinks", "addlink", "links", "link", "linknote"):
-            raw_links = _extract_slot_values(
-                _get_slot(slots, "links", "link", "title", "notes", "target")
-            )
-            matched_links = []
-            for link in raw_links:
-                link_clean = str(link).strip().lower()
-                best = next((t for t in titles if t.lower() == link_clean), None)
-                if not best:
-                    best = next(
-                        (
-                            t
-                            for t in titles
-                            if link_clean in t.lower() or t.lower() in link_clean
-                        ),
-                        str(link),
-                    )
-                matched_links.append(best)
-            result.update({"action": "add_links", "links": matched_links})
-
-        elif normalized in ("createnote", "newnote", "makenote", "addnote"):
-            title_vals = _extract_slot_values(
-                _get_slot(slots, "title", "name", "note_title", "topic", "subject")
-            )
-            title = title_vals[0] if title_vals else input_transcript
-            result.update({"action": "create_note", "title": title})
-
-        elif normalized in (
-            "appendtext",
-            "appendnote",
-            "dictate",
-            "dictation",
-            "addtext",
-        ):
-            text_vals = _extract_slot_values(
-                _get_slot(slots, "text", "content", "body", "note", "dictation")
-            )
-            text = text_vals[0] if text_vals else input_transcript
-            result.update({"action": "append_text", "text": text})
-
-        elif normalized in ("fallbackintent", "fallback"):
-            logger.info("Lex returned FallbackIntent; defaulting to append_text")
-            result.update({"action": "append_text", "text": input_transcript})
-
-        else:
-            logger.warning(
-                "Unrecognized Lex intent: %r; defaulting to append_text",
-                intent_name,
-            )
-            result.update({"action": "append_text", "text": input_transcript})
-
-        return result
-
-    def _recognize_command_lex(
-        self,
-        transcript: str,
-        note_context: str = "",
-        existing_titles: list[str] | None = None,
-    ) -> dict[str, Any]:
-        titles = existing_titles or []
-        session_id = str(uuid.uuid4())
-        logger.info(
-            "Recognizing command with Amazon Lex text (bot_id=%s, alias_id=%s, "
-            "transcript=%r, session_id=%s)",
-            self.bot_id,
-            self.bot_alias_id,
-            transcript,
-            session_id,
-        )
-        t0 = time.perf_counter()
-
-        kwargs: dict[str, Any] = {
-            "botId": self.bot_id,
-            "botAliasId": self.bot_alias_id,
-            "localeId": self.locale_id,
-            "sessionId": session_id,
-            "text": transcript,
-        }
-        if note_context:
-            kwargs["sessionState"] = {
-                "sessionAttributes": {
-                    "note_context": note_context[:1000],
-                }
-            }
-
-        response = self.lex_runtime.recognize_text(**kwargs)
-        duration_ms = (time.perf_counter() - t0) * 1000
-        logger.info("Amazon Lex response received in %.1fms: %s", duration_ms, response)
-
-        session_state = response.get("sessionState") or {}
-        intent = session_state.get("intent")
-        if not intent:
-            interpretations = response.get("interpretations") or []
-            if interpretations:
-                intent = interpretations[0].get("intent")
-
-        if not intent:
-            logger.info(
-                "No intent detected in Lex response; falling back to append_text"
-            )
-            return {
-                "action": "append_text",
-                "text": transcript,
-                "transcript": transcript,
-            }
-
-        intent_name = intent.get("name", "")
-        slots = intent.get("slots") or {}
-        normalized = (
-            intent_name.lower().replace("_", "").replace("-", "").replace(" ", "")
-        )
-        logger.info(
-            "Lex recognized intent=%r (normalized=%r) with slots=%r",
-            intent_name,
-            normalized,
-            slots,
-        )
-
-        result: dict[str, Any] = {"transcript": transcript}
-
-        if normalized in ("addtags", "addtag", "tags", "tag", "tagtarget"):
-            raw_tags = _extract_slot_values(
-                _get_slot(slots, "tags", "tag", "items", "values")
-            )
-            parsed_tags: list[str] = []
-            for tag in raw_tags:
-                cleaned = [
-                    t.strip().lstrip("#")
-                    for t in re.split(r",|\sand\s", tag)
-                    if t.strip()
-                ]
-                parsed_tags.extend(cleaned)
-            result.update({"action": "add_tags", "tags": parsed_tags or raw_tags})
-
-        elif normalized in ("addlinks", "addlink", "links", "link", "linknote"):
-            raw_links = _extract_slot_values(
-                _get_slot(slots, "links", "link", "title", "notes", "target")
-            )
-            matched_links = []
-            for link in raw_links:
-                link_clean = str(link).strip().lower()
-                best = next((t for t in titles if t.lower() == link_clean), None)
-                if not best:
-                    best = next(
-                        (
-                            t
-                            for t in titles
-                            if link_clean in t.lower() or t.lower() in link_clean
-                        ),
-                        str(link),
-                    )
-                matched_links.append(best)
-            result.update({"action": "add_links", "links": matched_links})
-
-        elif normalized in ("createnote", "newnote", "makenote", "addnote"):
-            title_vals = _extract_slot_values(
-                _get_slot(slots, "title", "name", "note_title", "topic", "subject")
-            )
-            title = title_vals[0] if title_vals else transcript
-            result.update({"action": "create_note", "title": title})
-
-        elif normalized in (
-            "appendtext",
-            "appendnote",
-            "dictate",
-            "dictation",
-            "addtext",
-        ):
-            text_vals = _extract_slot_values(
-                _get_slot(slots, "text", "content", "body", "note", "dictation")
-            )
-            text = text_vals[0] if text_vals else transcript
-            result.update({"action": "append_text", "text": text})
-
-        elif normalized in ("fallbackintent", "fallback"):
-            logger.info("Lex returned FallbackIntent; defaulting to append_text")
-            result.update({"action": "append_text", "text": transcript})
-
-        else:
-            logger.warning(
-                "Unrecognized Lex intent: %r; defaulting to append_text",
-                intent_name,
-            )
-            result.update({"action": "append_text", "text": transcript})
-
-        return result
-
-    def recognize_command(
-        self,
-        transcript_or_audio: str | bytes,
-        note_context: str = "",
-        existing_titles: list[str] | None = None,
-    ) -> dict[str, Any]:
-        if self.bot_id and self.bot_alias_id:
-            try:
-                if isinstance(transcript_or_audio, bytes):
-                    return self._recognize_command_utterance(
-                        transcript_or_audio,
-                        note_context=note_context,
-                        existing_titles=existing_titles,
-                    )
-                else:
-                    return self._recognize_command_lex(
-                        transcript_or_audio,
-                        note_context=note_context,
-                        existing_titles=existing_titles,
-                    )
-            except Exception as e:
-                logger.warning(
-                    "Lex command recognition failed (%s): %s",
-                    type(e).__name__,
-                    e,
-                )
-        else:
-            logger.info(
-                "Lex bot_id/bot_alias_id not configured; defaulting to append_text"
-            )
-
-        fallback_text = (
-            transcript_or_audio if isinstance(transcript_or_audio, str) else ""
-        )
-        logger.info("Falling back to action='append_text' with text=%r", fallback_text)
-        return {
-            "action": "append_text",
-            "text": fallback_text,
-            "transcript": fallback_text,
-        }
-
-    def process_audio(
-        self,
-        audio_data: bytes,
-        mode: str,
-        note_context: str = "",
-        existing_titles: list[str] | None = None,
-    ) -> dict[str, Any]:
-        match mode:
-            case "note":
-                transcript = self.convert_speech_to_text(audio_data)
-                return {"transcript": transcript, "result": transcript}
-            case "command":
-                cmd = self.recognize_command(
-                    audio_data,
-                    note_context=note_context,
-                    existing_titles=existing_titles,
-                )
-                transcript = cmd.get("transcript") or ""
-                return {
-                    "transcript": transcript,
-                    "action": cmd.get("action", "append_text"),
-                    "command": cmd,
-                    "result": cmd.get("text") or transcript,
-                }
-            case _:
-                raise ValueError(f"Unknown mode: {mode}")

@@ -17,7 +17,6 @@ interface NoteViewProps {
   isCleaning: boolean;
   notes: NoteListItem[];
   onRecord: () => void;
-  onRecordCommand: () => void;
   onStop: () => void;
   onBack: () => void;
   onDelete: () => void;
@@ -132,9 +131,6 @@ const NoteView: Component<NoteViewProps> = (props) => {
             >
               <button class="btn-record" disabled={props.captureBusy} onClick={props.onRecord}>
                 Record
-              </button>
-              <button class="btn-record-cmd" disabled={props.captureBusy} onClick={props.onRecordCommand}>
-                Record Command
               </button>
             </Show>
             <button
