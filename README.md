@@ -1,66 +1,52 @@
 # Secretary
 
-Secretary is a self-hosted dictation tool designed for seamless note-taking. It saves recordings on your device, uploads them as durable background jobs when connected, and transcribes them using Whisper. You can set it up to push the notes to a git remote. Also, there's an option to use a local LLM to clean up your notes. Secretary prioritizes your privacy and full ownership of your data. Everything runs entirely on your own hardware, making it completely free to use (aside from electricity costs).
+## Why Secretary?
 
-I use this on Tailscale so any device connected to my tailnet can access it from anywhere with an internet connection. This way the web app can be served from my home server while the actual usage is via a mobile browser. There was some initial setup involved: downloading the model file, setting up the Linux service file and installing Tailscale. After that it has been working for months without problems. Amazingly low maintenance for a home brew project!
+Dictating a note should be as natural as saying it out loud. Secretary records
+in your browser, transcribes with Whisper, and can clean up the text with a local
+LLM. Your recordings and Markdown notes stay on your own hardware: no
+subscription, vendor lock-in, or third-party AI service required. Optional Git
+sync keeps your notes in a repository you control.
 
-I find that making notes via audio transcription is relaxing and natural. Because Secretary automatically commits new notes to my private Github repo, there's no manual transfer work.
-
-Of course, one could use many commercial tools for the same purpose but I like that there's no vendor lock-in, subscription costs or sudden terms of service changes with this.
-
-### Desktop view
-<img width="1573" height="664" alt="secretary_screenshot" src="https://github.com/user-attachments/assets/71f22242-58cd-4d5a-9827-6a1ecef139d7" />
-
-### Mobile view
-<img height="800" alt="Screen Shot 2026-08-07 at 11 11 54" src="https://github.com/user-attachments/assets/65de3175-e11a-4b3b-bbb9-d6d1a3071d88" />
-<img align="right" height="800" alt="Screen Shot 2026-08-07 at 11 11 48" src="https://github.com/user-attachments/assets/967c087b-0bba-4477-9f8b-de1d8264cc38" />
-
-
-## Requirements
-
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) — the only prerequisite. It installs Python 3.13 and every dependency for you, and the installer below will fetch it if you don't have it.
-- `curl` and `tar`
-- Roughly **4 GB of free RAM** and **3 GB of disk** for the default model pair
-
-No GPU, no C compiler, no Node.js and no separate ffmpeg install. Releases
-ship the web UI already built, and `llama-cpp-python` comes from prebuilt
-wheels, so nothing is compiled on your machine.
+I run it on a home server and use it from my phone over Tailscale. Once set up,
+it needs little attention.
 
 ## Install
 
+Choose **a release** for everyday use, or **a Git checkout** to develop or run
+unreleased changes. Either can run as a Linux service.
+
+### From a GitHub release (recommended)
+
+You need `curl` and roughly **4 GB RAM / 3 GB disk** for the default
+models. The installer installs [uv](https://docs.astral.sh/uv/getting-started/installation/)
+if needed (to manage Python 3.13 and dependencies) and offers a model download.
+
 ```bash
 curl -LsSf https://raw.githubusercontent.com/anttihil/secretary/main/install.sh | sh
-```
-
-This downloads the latest release into `./secretary`, installs the Python
-dependencies, offers to fetch a language model, and writes a `.env`. Then:
-
-```bash
-cd secretary
+cd secretary/current
 uv run fastapi run main.py --port 8000
 ```
 
-Set `SECRETARY_DIR` to install somewhere else, or `SECRETARY_VERSION` to pin a
-release tag. The script never overwrites an existing install — it stops if the
-target directory is already there.
+The installer downloads the latest release into `./secretary/releases/`, creates
+`shared/.env`, and points `current` at the installed release.
 
-Prefer not to pipe a script into a shell? Read it first
-([install.sh](install.sh)), or grab the tarball from the
-[releases page](https://github.com/anttihil/secretary/releases), unpack it and
-run `uv sync --frozen --no-dev` inside.
+Set `SECRETARY_DIR` to choose another location or `SECRETARY_VERSION` to choose
+a release tag (pass these to `sh` when using the pipeline). **It is a fresh-install
+script, not an updater:** it refuses an existing target directory.
 
-### Prebuilt wheel coverage
+The installer uses the **`secretary-v….tar.gz` release asset** from
+[GitHub Releases](https://github.com/anttihil/secretary/releases). GitHub's
+automatic “Source code” archives do not include the built web UI. If you skip
+the model download, set `LLM_MODEL_PATH` in `shared/.env` before starting.
 
-The prebuilt `llama-cpp-python` wheels cover Linux x86_64 and aarch64 (glibc
-and musl), macOS on Apple Silicon, and Windows x64. On anything else — an
-Intel Mac, for instance — uv falls back to building from source, which needs a
-C compiler and CMake.
+Release assets need no Node.js or separate ffmpeg installation. Prebuilt CPU
+wheels cover Linux x86_64/aarch64 (glibc and musl), Apple Silicon macOS, and
+Windows x64. Other platforms may need a C compiler and CMake.
 
-## Install from source
+### From a Git checkout
 
-For hacking on Secretary. This is the path that needs
-[Node.js](https://nodejs.org/) 20+ and git, because the web UI is built
-locally rather than downloaded:
+Install uv, Git, `curl`, Node.js 20+, and `make`, then:
 
 ```bash
 git clone https://github.com/anttihil/secretary.git
@@ -69,333 +55,268 @@ cd secretary
 make serve
 ```
 
-`./setup.sh` (also `make setup`) checks prerequisites, installs dependencies,
-offers to download a model, writes `.env` and builds the frontend. It is safe
-to re-run — it never overwrites an existing `.env` or a model you already have.
+Setup installs dependencies, offers a model download, creates `.env`, and builds
+the UI. Re-running it preserves an existing `.env` and downloaded models.
 
-<details>
-<summary>Manual steps, if you'd rather run them yourself</summary>
+### First start
 
-```bash
-# 1. Install Python and frontend dependencies
-make install
+Open `http://localhost:8000`, create a note with **+ New**, record, and stop.
+The first start needs internet access to download Whisper and takes longer while
+the models load. Release installs keep notes in `shared/notes`; Git checkouts
+use `./notes`. Below, “`.env`” means `shared/.env` for a release installation.
 
-# 2. Download a GGUF model (e.g. Qwen2.5-3B-Instruct)
-curl -L https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf --create-dirs -o ./models/qwen2.5-3b-instruct-q4_k_m.gguf
+For another language, change `WHISPER_MODEL=base.en` (English-only) to `base`,
+`small`, or `medium` in `.env` or the web settings. Set `LLM_MODEL_PATH` to your
+instruction-tuned GGUF model; smaller models use less RAM and run faster.
 
-# 3. Configure environment
-cp .env.example .env
-# Edit .env and set LLM_MODEL_PATH to your downloaded model path
+## Run as a Linux service
 
-# 4. Build static assets
-make build
-
-# 5. Serve the app
-make serve
-```
-
-Step 1 matters: `uv sync` alone installs only the Python side, and step 4
-will fail without the frontend's `node_modules`.
-
-</details>
-
-## Backend layout
-
-`main.py` assembles the FastAPI app and serves the built frontend. Backend code
-is grouped under `backend/`:
-
-- `routes/`: endpoints for notes, directories, migration, recordings, settings,
-  glossary, and WebSocket audio.
-- `note_storage.py`: path validation, frontmatter, and atomic note writes.
-- `worker.py`: shared AI job queue, durable recording processing, and lifecycle.
-- `ai_factory.py`: local/AWS client selection.
-- `git_sync.py`: background note commits and pushes.
-- `paths.py` and `static_files.py`: filesystem locations and frontend caching.
-
-AI implementations, settings persistence, and the recording database remain in
-`ai_client.py`, `aws_client.py`, `config.py`, and `recording_jobs.py`.
-
-## Setup notes
-
-### First run
-
-Secretary loads both models at startup, so the first launch is slow and needs
-a network connection: the Whisper model is downloaded from Hugging Face
-the first time it's used (a few hundred MB for the default), and the GGUF file
-is read into memory. Later starts are much faster.
-
-Once it's up, open `http://localhost:8000`, create a note with **+ New**, press
-Record, say a sentence and stop. The recording queue shows upload and processing
-progress, and the transcript is saved to the note in `./notes`.
-
-### Choosing models
-
-**Language model.** Any instruction-tuned GGUF works, not just the Qwen model
-in the setup script. Smaller models are faster and use less RAM; larger ones
-clean up transcripts more reliably. Point `LLM_MODEL_PATH` at whichever file
-you downloaded.
-
-**Speech-to-text.** The default `WHISPER_MODEL=base.en` is **English-only**.
-For any other language, use a multilingual model — `base`, `small` or
-`medium`, in increasing order of accuracy and cost. You can change this in
-`.env` or from the settings dialog in the web UI, which also exposes the
-device and compute type.
-
-### Microphone access needs HTTPS
-
-Browsers only grant microphone access on secure origins. `http://localhost`
-counts as secure, so a local browser works out of the box — but reaching the
-server from another machine over plain HTTP does **not**, and recording will
-silently fail.
-
-The simplest fix is [Tailscale](#tailnet-hosting), which terminates TLS for
-you. Alternatively, get a certificate yourself and run uvicorn directly:
+After installing and checking that the app starts:
 
 ```bash
-tailscale cert your-machine.tailnet-name.ts.net
-uv run uvicorn main:app --host 0.0.0.0 \
-    --ssl-keyfile=your-machine.tailnet-name.ts.net.key \
-    --ssl-certfile=your-machine.tailnet-name.ts.net.crt
-```
-
-### Using an existing notes folder (optional)
-
-By default Secretary reads and writes notes in `./notes`. To use markdown you
-already have, point `NOTES_DIR` at that folder in your `.env`:
-
-```
-NOTES_DIR=/home/you/my-notes
-```
-
-Secretary expects each note to carry `title`, `created` and `updated`
-frontmatter and to be named `title-YYYYMMDD-HHMMSS.md`. Existing files usually
-match neither. The **Import existing notes** button at the bottom of the
-sidebar fixes that in one pass: it fills in any missing frontmatter (inferring
-timestamps from the filename, or falling back to the file's modification time)
-and renames files to the expected form. Notes that already conform are left
-untouched, so it is safe to run more than once.
-
-It edits the files in place, so back up the folder first. In particular, note
-that renaming breaks `[[wikilinks]]` in tools that resolve links by filename,
-such as Obsidian — Secretary's own links resolve by title and survive the
-rename. If your notes folder is a git repository, Secretary commits and pushes
-changes automatically, which includes the import.
-
-### Syncing notes to a git repo (optional)
-
-If `NOTES_DIR` is inside a git repository, Secretary commits and pushes every
-change automatically. There is nothing to enable — just make the folder a repo
-with a remote:
-
-```bash
-cd /home/you/my-notes
-git init && git add . && git commit -m "Initial notes"
-git remote add origin git@github.com:you/my-notes.git
-git push -u origin main
-```
-
-Two things to get right, since the push runs unattended:
-
-- **Authentication must be non-interactive.** Use an SSH key without a
-  passphrase (or one loaded into an agent the service can reach), or a
-  credential helper. If git prompts, the push just fails and is logged.
-- **Set `user.name` and `user.email`** in that repo, or commits will fail on
-  machines without a global git identity.
-
-Pushes are best-effort: a failure is logged and the note is still saved
-locally.
-
-### GPU acceleration (optional)
-
-By default, `llama-cpp-python` comes from the CPU wheel index. For NVIDIA
-hardware, edit the `url` of the `llama-cpp-cpu` index in `pyproject.toml` to
-point at the matching CUDA build — `cu121` through `cu125` are published, so
-check your version with `nvidia-smi` and pick the closest:
-
-```toml
-url = "https://abetlen.github.io/llama-cpp-python/whl/cu124/"
-```
-
-Leave the index `name` alone; `[tool.uv.sources]` refers to it. Then re-run
-`uv sync`. These wheels are prebuilt too, so there's still nothing to compile.
-Set `LLM_GPU_LAYERS=-1` in `.env` to actually use the GPU.
-
-If no wheel matches your platform, build with CUDA support instead — this
-takes several minutes and needs the CUDA toolkit (`nvcc --version` to verify):
-
-```bash
-CMAKE_ARGS="-DGGML_CUDA=on" uv pip install llama-cpp-python --upgrade --force-reinstall --no-cache-dir
-```
-
-To move Whisper onto the GPU as well, set `WHISPER_DEVICE=cuda` and
-`LLM_GPU_LAYERS=-1` (all layers) in your `.env`.
-
-## Usage
-
-Open `http://localhost:8000` in your browser to use the web UI. See
-[Microphone access needs HTTPS](#microphone-access-needs-https) before trying
-this from another device.
-
-### Offline recording and the background queue
-
-Visit Secretary while connected once so the browser can cache the app. You can
-then reopen it offline, create notes, select cached notes, and record several
-dictations in succession. Press **Stop** for each recording; once
-the local save finishes, you can start the next recording without waiting for
-uploads or transcription. **Cancel recording** discards the active capture.
-
-The **Recording queue** shows each recording's target and delivery state:
-
-- **Saved on device**: audio and its target note ID are committed to IndexedDB.
-  They survive a page reload. New offline notes are stored there too.
-- **Uploading / queued / transcribing / saving**: connectivity has returned and
-  the server is handling the job. Pending uploads are retried automatically.
-- **Saved**: the server has written the result to the original note, even if you
-  have switched notes, renamed/moved that note, or closed the page.
-- **Failed**: the audio remains available for retry or download. A failed job does
-  not block later recordings. An unuploaded recording can be discarded.
-
-Uploads run while the app is open. Browsers supporting **Background Sync** can
-also upload after you close the page; other browsers resume when you reopen
-Secretary. Once accepted, server jobs continue independently of the browser.
-The browser's storage quota limits offline capacity; an unsuccessful local save
-offers retry and audio download rather than claiming the recording is stored.
-Clearing site data removes recordings that have not reached the server. Active
-capture must be stopped and locally saved before closing the page.
-
-Recordings use HTTP uploads with unique IDs, not connection-scoped WebSocket
-sessions. Upload retries return the same job. Processing is serial (one AI
-worker) while capture and uploading can continue. Each upload currently has a
-100 MiB limit; larger recordings remain on the device for download.
-
-New recordings are dictation-only. Use **+ New** to create a note, the note
-body's context menu to insert tags or note links, and **Clean up** to edit a
-transcript with AI.
-
-Server jobs and pending audio live in `NOTES_DIR/.secretary/jobs.sqlite3`. Keep
-this database with your notes when backing up or moving the server. The hidden
-directory excludes its runtime data from note listings and automatic Git sync.
-Interrupted queued/transcribing/saving jobs resume on startup; successful jobs
-release their audio. Failed jobs retain it for retry. Run one backend process
-(the default `fastapi run` setup) for this filesystem-backed queue.
-
-Notes acquire a stable `id` frontmatter field. Applied recording IDs are stored
-in `recording_jobs` frontmatter alongside the body in an atomic file replacement.
-These receipts prevent duplicate appends if the server restarts after saving
-text but before marking its job complete; retain both fields when editing notes
-outside Secretary.
-
-### Development checks
-
-```bash
-uv run python -m unittest discover -s tests -v
-make check
-make build
-# Also run `npm exec tsc -- --noEmit` in client/.
-```
-
-Persistence tests cover duplicate uploads, restart recovery, interrupted saves,
-stable targets after rename/move, rejection of unsupported modes, and continuation after a
-failed job. User-facing changes additionally require real browser verification
-as described in `AGENTS.md`.
-
-## Running as a Linux service
-
-A unit file is included in the repository. Copy it into place and edit the
-placeholders:
-
-```bash
+cd /path/to/secretary
 sudo cp secretary.service /etc/systemd/system/secretary.service
-sudo editor /etc/systemd/system/secretary.service   # replace YOUR_USER and /path/to/secretary
-```
-
-Then enable and start:
-
-```bash
+sudo editor /etc/systemd/system/secretary.service
+# Release installs generate the user and paths; review before installing.
 sudo systemctl daemon-reload
 sudo systemctl enable --now secretary
 sudo systemctl status secretary
 ```
 
-View logs with `journalctl -u secretary -f` or tail the log file at `logs/secretary.log`.
+For release installs, the generated unit runs `current/.venv/bin/fastapi` from
+`current` and reads `shared/.env`. These paths stay fixed across updates.
+For a Git checkout, replace `YOUR_USER`, use the checkout as `WorkingDirectory`,
+and point `EnvironmentFile` / `ExecStart` at its `.env` / `.venv/bin/fastapi`.
+Restart the service after editing `.env`. Prefer absolute model and notes paths.
 
-The unit sets `ENVIRONMENT=production`, which tells Secretary to take its
-configuration from systemd's `EnvironmentFile` rather than loading `.env`
-itself. It also enables some light sandboxing; drop those lines if they
-conflict with where your notes live.
+### Access from a phone or another computer
 
-## Logging & LLM Diagnostics
-
-Secretary writes logs to both the console (captured by `journalctl` in systemd) and rotating log files (by default in `./logs/secretary.log`).
-
-- **File Rotation & Retention**: Logs rotate daily at midnight into numbered files (`secretary.log.1`, `secretary.log.2`, ..., `secretary.log.30`). Log files older than 30 days are automatically pruned.
-- **LLM Diagnostic Logging**: Cleanup requests, raw outputs, and response timings are logged with full details.
-- **Configuration**:
-  - `LOG_LEVEL`: Log level (e.g. `INFO`, `DEBUG`, `WARNING`, `ERROR`). Set to `DEBUG` to see full LLM prompt messages.
-  - `LOG_DIR`: Directory where log files are stored (default: `./logs`).
-  - `LOG_FILE`: Explicit path to active log file (default: `./logs/secretary.log`).
-
-
-## Tailnet hosting
-
-To expose the web interface on your [Tailscale](https://tailscale.com) tailnet, use `tailscale serve`:
+Microphone access requires **HTTPS**, except on `http://localhost`. With
+[Tailscale](https://tailscale.com) installed and HTTPS enabled for your tailnet:
 
 ```bash
 tailscale serve --bg 8000
+tailscale serve status
 ```
 
-This makes the app available at `https://<your-machine-name>.<tailnet>.ts.net` over HTTPS, accessible only to devices on your tailnet. Because it serves over HTTPS, microphone access works from your phone without any further certificate setup.
+Open `https://<machine>.<tailnet>.ts.net` from a device on your tailnet. Access is
+controlled by your Tailscale policy. Stop serving with
+`tailscale serve --https=443 off`. You can also use your own HTTPS reverse proxy.
 
-To restrict access to your own user account only:
+## Update and maintain
+
+**Updates are user-triggered.** Release installs have a one-command updater;
+Git checkouts use Git and a frontend build. Nothing updates on a schedule.
+
+### Update a release installation
+
+Run as the installation owner (not with `sudo`):
 
 ```bash
-tailscale serve --bg --set-path / http://localhost:8000
+cd /path/to/secretary
+./update.sh                 # Latest GitHub release
+./update.sh vX.Y.Z          # A specific release tag
+./update.sh --rollback      # Switch back, retaining current notes/settings
 ```
 
-Check serve status with `tailscale serve status` and stop with `tailscale serve --https=443 off`.
+The updater downloads and validates the package (including GitHub's SHA-256
+digest when provided), then installs dependencies in a fresh release directory
+while the service keeps running. It uses `sudo` only to stop/start the service,
+backs up settings and notes while stopped, switches `current`, and waits for
+the running app's health check. Failed activation restores the previous code
+and pre-update state. After a killed/interrupted activation, run
+`./update.sh --recover` to restore that same snapshot.
+
+Models and other persistent files live in `shared/`; application files and
+virtual environments live in `releases/`. Obsolete application files cannot
+leak into a new version. Backups are retained in `backups/`. Old release
+directories are retained too; remove only ones not referenced by `current` or
+`previous`. Allow disk space for two releases and a notes backup.
+
+Read release notes before updating: manual rollback keeps today's data and
+cannot undo incompatible data migrations. The new `.env.example` is available
+under `current`; add any required new settings to `shared/.env`.
+
+For a different service/port, use `--service NAME` and
+`--health-url http://127.0.0.1:PORT/api/health`. Startup waits up to 300 seconds;
+increase with `--timeout SECONDS` for slow model loading. User-level systemd
+units use `--user-service`. Older releases without `/api/health` are checked
+through `/api/notes`, without deployment identity verification.
+
+For a terminal-run installation, stop the app yourself, run
+`./update.sh --no-service`, and start from `current` again. This mode does not
+control a service or perform a startup health check.
+
+### Migrate an existing release/service installation (once)
+
+For an older flat installation, download the new updater into that directory
+and run it as the installation owner:
+
+```bash
+cd /path/to/secretary
+curl -fL https://raw.githubusercontent.com/anttihil/secretary/main/updater.py -o updater.py
+uv run --no-project --python 3.13 python updater.py --migrate
+sudo editor /etc/systemd/system/secretary.service
+# Use the generated secretary.service paths; preserve custom service settings.
+sudo systemctl daemon-reload
+sudo systemctl start secretary
+sudo systemctl status secretary
+./update.sh
+```
+
+Migration stops the service, backs up the original installation and notes,
+copies persistent files into `shared/`, and prepares a `legacy` release with a
+new virtual environment. It leaves the service stopped for the one-time unit
+edit. Allow extra disk space for the backup and copied models/data. Original
+flat files remain for recovery; use `current` / `shared` afterward.
+For a terminal install, pass `--no-service` after stopping it yourself. Git
+checkouts keep using the separate instructions below.
+
+### Update a Git checkout
+
+Commit or stash local code changes first and make a backup with the service
+stopped (see below). Run each step only if the previous one succeeds:
+
+```bash
+cd /path/to/secretary
+sudo systemctl stop secretary
+git pull --ff-only
+uv sync --frozen --no-dev
+cd client
+npm ci
+cd ..
+make build
+sudo systemctl start secretary
+sudo systemctl status secretary
+journalctl -u secretary -n 50 --no-pager
+```
+
+This updates the current branch, usually `main`; GitHub releases do not update
+your checkout automatically. To run a particular release instead, use
+`git fetch --tags` and `git switch --detach vX.Y.Z` in place of `git pull`, then
+sync dependencies and rebuild as above. For development, use `uv sync` to also
+install development dependencies.
+
+### Backups and recovery
+
+- Stop the service for a consistent backup. Keep `.env`, `settings.json`, and
+  your entire notes directory, **including `NOTES_DIR/.secretary/jobs.sqlite3`**
+  (pending recordings and job state). Back up custom systemd configuration too.
+- The updater snapshots `.env`, `settings.json`, and the entire configured
+  `NOTES_DIR`, including external folders. Keep a separate backup outside the
+  installation/machine too. Models can be backed up or downloaded again.
+- Automatic Git sync covers notes, **not** the hidden job database. Keep note
+  `id` and `recording_jobs` frontmatter when editing externally; these prevent
+  recordings from being appended twice after recovery.
+- `--rollback` switches application versions while retaining current data.
+  If a release changed the data format, stop the app and restore compatible
+  notes/settings from a backup too. Restoring old data discards later edits.
+- Run **one backend process** for the recording queue. After an update, reload
+  the browser and check that a short recording saves successfully.
+
+### Everyday commands
+
+```bash
+sudo systemctl restart secretary       # Apply .env changes
+sudo systemctl status secretary        # Check service health
+journalctl -u secretary -f             # Follow logs
+```
+
+Logs also rotate daily in `./logs/secretary.log`, with 30 rotated files retained.
+Use `LOG_DIR` / `LOG_FILE` to change the location and `LOG_LEVEL=DEBUG` for more
+detail. Cleanup requests and model outputs are logged; debug logging also
+includes full prompts.
+
+## Notes and daily use
+
+### Using an existing notes folder
+
+Set `NOTES_DIR=/home/you/my-notes` in `.env`. Back up that folder, then use
+**Import existing notes** at the bottom of the sidebar to add missing frontmatter
+and rename files to Secretary's format. Import edits files in place; renaming
+can break filename-based `[[wikilinks]]` in other tools such as Obsidian.
+
+### Syncing notes to Git (optional)
+
+If the notes folder is in a Git repository, Secretary automatically commits and
+pushes changes, including imports. For a new repository:
+
+```bash
+cd /home/you/my-notes
+git init -b main
+git config user.name "Your Name"
+git config user.email "you@example.com"
+git add .
+git commit -m "Initial notes"
+git remote add origin git@github.com:you/my-notes.git
+git push -u origin main
+```
+
+Authentication must work without prompts **as the service user** (SSH key/agent
+or credential helper). Failed pushes are logged; notes remain saved locally.
+
+### Recording offline
+
+Open Secretary online once to cache the app. You can then create notes and
+record offline. Press **Stop** and wait for **Saved on device** before closing
+the page. The recording queue shows upload, processing, and save progress;
+failed recordings can be retried or downloaded.
+
+Pending uploads resume when you reopen the app online; supported browsers can
+also upload via Background Sync. Once uploaded, processing continues even with
+the browser closed. Clearing browser site data deletes unuploaded recordings.
+Each upload is limited to 100 MiB. Use **Clean up** to edit a transcript with AI.
 
 ## Troubleshooting
 
-**`KeyError: 'LLM_MODEL_PATH'` on startup.** `LLM_MODEL_PATH` isn't set. Check
-that `.env` exists and names your model file. Under systemd, check the
-`EnvironmentFile` path in the unit.
+| Problem | What to check |
+| --- | --- |
+| Missing `LLM_MODEL_PATH` or model path error | Check `.env`, the model file, and the service's `EnvironmentFile` / `WorkingDirectory`. Prefer absolute paths. |
+| Missing `static/` | Release install: use the packaged release asset, not a source archive. Git checkout: run `make install && make build`. |
+| Recording fails on a phone | Use HTTPS; plain HTTP only works for microphone access on localhost. |
+| Port 8000 is in use | Stop the other server or use `--port 8080` (update the service/proxy too). |
+| Slow transcription or cleanup | Try `WHISPER_MODEL=tiny.en` for English or a smaller GGUF model. |
+| `llama-cpp-python` needs compiling | A wheel may not cover your platform. On Debian/Ubuntu install `build-essential cmake`. |
 
-**`RuntimeError: Directory '.../static' does not exist`.** The frontend hasn't
-been built. Run `make install && make build`.
+<details>
+<summary>Optional NVIDIA GPU setup</summary>
 
-**Loading the model fails with a path error.** `LLM_MODEL_PATH` points at a
-file that isn't there. Relative paths resolve from the working directory, so
-prefer an absolute path when running as a service.
+In `pyproject.toml`, change the `llama-cpp-cpu` index URL to a matching published
+CUDA wheel index, such as `https://abetlen.github.io/llama-cpp-python/whl/cu124/`.
+Keep the index name unchanged and run `uv sync`. Set `LLM_GPU_LAYERS=-1` and,
+for Whisper, `WHISPER_DEVICE=cuda` in `.env`, then restart. This is a local
+dependency customization: preserve/reapply it when updating.
 
-**`llama-cpp-python` fails to build during install.** You're on a platform
-with no prebuilt wheel (see [Prebuilt wheel
-coverage](#prebuilt-wheel-coverage)), so it compiles from source and needs a C
-compiler and CMake — on Debian/Ubuntu, `sudo apt install build-essential
-cmake`.
+</details>
 
-**Recording does nothing on a phone or another computer.** Almost always the
-HTTPS requirement — see
-[Microphone access needs HTTPS](#microphone-access-needs-https).
+## Screenshots
 
-**`Address already in use`.** Something else is on port 8000. Pass a different
-one: `uv run fastapi run main.py --port 8080`.
+<details>
+<summary>Desktop and mobile views</summary>
 
-**Transcription and cleanup are very slow.** Expected on modest CPUs. Try a
-smaller Whisper model (`tiny.en`) and a smaller or more heavily quantized
-GGUF, or enable [GPU acceleration](#gpu-acceleration-optional).
+<img width="1573" height="664" alt="Secretary desktop view" src="https://github.com/user-attachments/assets/71f22242-58cd-4d5a-9827-6a1ecef139d7" />
+<img height="800" alt="Secretary mobile notes view" src="https://github.com/user-attachments/assets/65de3175-e11a-4b3b-bbb9-d6d1a3071d88" />
+<img height="800" alt="Secretary mobile recording view" src="https://github.com/user-attachments/assets/967c087b-0bba-4477-9f8b-de1d8264cc38" />
 
-## Releasing
+</details>
 
-Tagging a version builds the frontend in CI and publishes a tarball containing
-the built assets, which is what `install.sh` downloads:
+## Development and releases
+
+From a Git checkout, `make dev` runs backend and frontend development servers.
+Checks:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+uv run python -m unittest discover -s tests -v
+make check
+make build
+cd client
+npm exec tsc -- --noEmit
 ```
 
-See [.github/workflows/release.yml](.github/workflows/release.yml). The
-workflow can also be run manually from the Actions tab against an existing tag.
+User-facing code changes also require browser verification; see [AGENTS.md](AGENTS.md).
+Pushing a `v*` tag runs [the release workflow](.github/workflows/release.yml),
+which builds the UI and publishes `secretary-<tag>.tar.gz`. It can also be run
+manually for an existing tag from GitHub Actions.
 
 ## License
 

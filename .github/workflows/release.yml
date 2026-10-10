@@ -48,7 +48,8 @@ jobs:
           cp -r main.py backend ai_client.py aws_client.py config.py \
                 recording_jobs.py logging_config.py \
                 pyproject.toml uv.lock .env.example Makefile \
-                secretary.service README.md LICENSE static dist/secretary/
+                secretary.service updater.py update.sh README.md LICENSE static \
+                dist/secretary/
           mkdir -p dist/secretary/notes && touch dist/secretary/notes/.gitkeep
           tar -czf "secretary-$tag.tar.gz" -C dist secretary
           ls -lh "secretary-$tag.tar.gz"

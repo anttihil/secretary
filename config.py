@@ -2,7 +2,9 @@ import json
 import os
 from pathlib import Path
 
-SETTINGS_FILE = Path(__file__).parent / "settings.json"
+SETTINGS_FILE = Path(
+    os.environ.get("SETTINGS_FILE", Path(__file__).parent / "settings.json")
+)
 
 DEFAULTS = {
     "whisper_device": "cpu",
