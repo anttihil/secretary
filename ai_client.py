@@ -102,13 +102,34 @@ class LocalAIClient(AIClient):
         t0 = time.perf_counter()
         # faster-whisper decodes through PyAV, which sniffs the container
         # itself, so any format ffmpeg understands works here.
-        segments, _ = self.whisper.transcribe(BytesIO(audio_data), vad_filter=True)
-        transcript = " ".join(segment.text.strip() for segment in segments)
+        segments, info = self.whisper.transcribe(BytesIO(audio_data), vad_filter=True)
+        logger.info(
+            "Decoded recording (audio_bytes=%d, audio_duration_s=%.3f, "
+            "speech_duration_s=%.3f)",
+            len(audio_data),
+            info.duration,
+            info.duration_after_vad,
+        )
+        # Inference is lazy: consume every segment, including later 30s windows.
+        parts: list[str] = []
+        segment_count = 0
+        last_segment_end = 0.0
+        for segment in segments:
+            parts.append(segment.text.strip())
+            segment_count += 1
+            last_segment_end = max(last_segment_end, segment.end)
+        transcript = " ".join(parts)
         duration_ms = (time.perf_counter() - t0) * 1000
         logger.info(
-            "Speech to text completed in %.1fms (audio_bytes=%d, transcript=%r)",
+            "Speech to text completed in %.1fms (audio_bytes=%d, "
+            "audio_duration_s=%.3f, speech_duration_s=%.3f, "
+            "segment_count=%d, last_segment_end_s=%.3f, transcript=%r)",
             duration_ms,
             len(audio_data),
+            info.duration,
+            info.duration_after_vad,
+            segment_count,
+            last_segment_end,
             transcript,
         )
         return transcript

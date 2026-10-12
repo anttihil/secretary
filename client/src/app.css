@@ -1045,3 +1045,4 @@ button:disabled {
 .job-status { font-style: italic; }
 .job-error { color: var(--ink-red, #900); margin: 0.3rem 0; overflow-wrap: anywhere; }
 .capture-controls { display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0.5rem 1rem; align-items: center; }
+.capture-notice { padding: 0.75rem 1rem; color: var(--ink-red); border-bottom: 1px solid var(--border-manila); overflow-wrap: anywhere; }

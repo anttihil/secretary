@@ -458,6 +458,9 @@ export default function App() {
             />
           </Show>
         </div>
+        <Show when={recording.captureNotice()}>
+          <div class="capture-notice" role="alert">{recording.captureNotice()}</div>
+        </Show>
         <Show when={currentNote()}>
           <div class="mobile-status-strip">
             <Show

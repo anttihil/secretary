@@ -16,6 +16,10 @@ export function createRecordingController(onNotesChanged: (savedNoteId?: string)
   const [jobs, setJobs] = createSignal<LocalRecording[]>([]);
   const [connected, setConnected] = createSignal(navigator.onLine);
   const [storageError, setStorageError] = createSignal("");
+  const [captureNotice, setCaptureNotice] = createSignal("");
+  const [wakeLockWarning, setWakeLockWarning] = createSignal("");
+  let wakeLock: WakeLockSentinel | undefined;
+  let wakeLockRequest: MediaRecorder | undefined;
   let recorder: MediaRecorder | undefined;
   let stream: MediaStream | undefined;
   let unsaved: LocalRecording | undefined;
@@ -23,6 +27,43 @@ export function createRecordingController(onNotesChanged: (savedNoteId?: string)
   let running = false;
   let disposed = false;
   let cancelled = false;
+
+  function releaseWakeLock(): void {
+    const lock = wakeLock;
+    wakeLock = undefined;
+    setWakeLockWarning("");
+    void lock?.release().catch(() => {});
+  }
+
+  async function acquireWakeLock(): Promise<void> {
+    const active = recorder;
+    if (disposed || !active || active.state !== "recording" || document.visibilityState !== "visible" || wakeLock || wakeLockRequest === active) return;
+    const warning = "Screen sleep protection unavailable. Keep the screen awake and this page open while recording.";
+    if (!("wakeLock" in navigator)) { setWakeLockWarning(warning); return; }
+    wakeLockRequest = active;
+    try {
+      const lock = await navigator.wakeLock.request("screen");
+      // Stop or another capture may have happened while permission was pending.
+      if (disposed || recorder !== active || active.state !== "recording") {
+        await lock.release();
+        return;
+      }
+      wakeLock = lock;
+      if (lock.released) { wakeLock = undefined; setWakeLockWarning(warning); return; }
+      setWakeLockWarning("");
+      lock.addEventListener("release", () => {
+        if (wakeLock !== lock) return;
+        wakeLock = undefined;
+        if (active.state === "recording") setWakeLockWarning(warning);
+      });
+    } catch {
+      if (!disposed && recorder === active && active.state === "recording") setWakeLockWarning(warning);
+    } finally {
+      if (wakeLockRequest === active) wakeLockRequest = undefined;
+    }
+  }
+
+  const visibilityChanged = () => { if (document.visibilityState === "visible") void acquireWakeLock(); };
 
   async function refresh(): Promise<void> {
     const stored = await getRecordings();
@@ -124,6 +165,8 @@ export function createRecordingController(onNotesChanged: (savedNoteId?: string)
     const id = crypto.randomUUID();
     const target = { id: note.id, title: note.title };
     setCapture({ phase: "requesting_microphone" });
+    setCaptureNotice("");
+    setWakeLockWarning("");
     cancelled = false;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -133,8 +176,25 @@ export function createRecordingController(onNotesChanged: (savedNoteId?: string)
       const chunks: Blob[] = [];
       const recordingStream = stream;
       const recordingRecorder = recorder;
+      const interrupted = (message: string) => {
+        if (disposed || cancelled || recorder !== recordingRecorder || capture().phase !== "recording") return;
+        setCaptureNotice(`${message} Only audio captured before the interruption is available.`);
+        stop();
+      };
+      const trackEnded = () => interrupted("Recording interrupted: the browser stopped the microphone.");
+      const trackMuted = () => interrupted("Recording interrupted: the browser suspended the microphone.");
+      for (const track of recordingStream.getAudioTracks()) {
+        track.addEventListener("ended", trackEnded);
+        track.addEventListener("mute", trackMuted);
+      }
       recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
       recorder.onstop = async () => {
+        interrupted("Recording interrupted: the browser stopped recording.");
+        releaseWakeLock();
+        for (const track of recordingStream.getAudioTracks()) {
+          track.removeEventListener("ended", trackEnded);
+          track.removeEventListener("mute", trackMuted);
+        }
         recordingStream.getTracks().forEach((t) => t.stop());
         if (recorder === recordingRecorder) recorder = undefined;
         if (stream === recordingStream) stream = undefined;
@@ -149,12 +209,16 @@ export function createRecordingController(onNotesChanged: (savedNoteId?: string)
         await storeCaptured();
       };
       recorder.onerror = () => {
-        setCapture({ phase: "failed", message: "Microphone recording failed" });
-        if (recorder?.state === "recording") recorder.stop();
+        interrupted("Recording interrupted: microphone recording failed.");
       };
       recorder.start(1000);
       setCapture({ phase: "recording", title: target.title });
+      if (recordingStream.getAudioTracks().some((track) => track.readyState === "ended" || track.muted)) {
+        interrupted("Recording interrupted: the microphone is unavailable.");
+      }
+      void acquireWakeLock();
     } catch (error) {
+      releaseWakeLock();
       stream?.getTracks().forEach((t) => t.stop());
       setCapture({ phase: "failed", message: error instanceof DOMException && error.name === "NotAllowedError" ? "Microphone access denied" : "Unable to start microphone recording" });
     }
@@ -184,7 +248,8 @@ export function createRecordingController(onNotesChanged: (savedNoteId?: string)
   function stop(): void {
     if (capture().phase !== "recording" || !recorder) return;
     setCapture({ phase: "finalizing" });
-    recorder.stop(); // onstop runs only after the final dataavailable event.
+    releaseWakeLock();
+    if (recorder.state !== "inactive") recorder.stop(); // Wait for the final dataavailable event.
   }
 
   const canStart = () => ["idle", "failed"].includes(capture().phase) && !unsaved;
@@ -236,6 +301,7 @@ export function createRecordingController(onNotesChanged: (savedNoteId?: string)
       await refresh();
       window.addEventListener("online", online);
       window.addEventListener("offline", offline);
+      document.addEventListener("visibilitychange", visibilityChanged);
       navigator.serviceWorker?.addEventListener("message", workerMessage);
       timer = setInterval(() => { void refresh().catch(() => {}); void sync(); }, 3000);
       void sync();
@@ -245,13 +311,15 @@ export function createRecordingController(onNotesChanged: (savedNoteId?: string)
 
   function dispose(): void {
     disposed = true;
+    releaseWakeLock();
     if (timer) clearInterval(timer);
     window.removeEventListener("online", online);
     window.removeEventListener("offline", offline);
+    document.removeEventListener("visibilitychange", visibilityChanged);
     navigator.serviceWorker?.removeEventListener("message", workerMessage);
     stream?.getTracks().forEach((t) => t.stop());
     if (recorder?.state === "recording") recorder.stop();
   }
 
-  return { capture, canStart, jobs, connected, storageError, start, stop, cancel, retry, discard, download, storeCaptured, initialize, dispose, sync };
+  return { capture, captureNotice: () => captureNotice() || wakeLockWarning(), canStart, jobs, connected, storageError, start, stop, cancel, retry, discard, download, storeCaptured, initialize, dispose, sync };
 }
