@@ -438,11 +438,11 @@ export default function App() {
         <div class="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
       </Show>
       <div class="main-panel">
-        <Show when={isRecording()}>
+        <Show when={isRecording() && !currentNote()}>
           <div class="capture-controls">
             <span>{status()}</span>
-            <button class="btn-stop" onClick={stopRecording}>Stop recording</button>
-            <button onClick={() => recording.cancel()}>Cancel recording</button>
+            <button class="btn-stop" onClick={stopRecording}>Stop</button>
+            <button class="btn-cancel" onClick={() => recording.cancel()}>Cancel</button>
           </div>
         </Show>
         <div class="mobile-topbar">
@@ -475,13 +475,18 @@ export default function App() {
                 Record
               </button>
             </Show>
-            <button
-              class="btn-clean"
-              onClick={handleCleanNote}
-              disabled={isRecording() || isCleaning() || !currentNote()?.body?.trim()}
-            >
-              {isCleaning() ? "..." : "Clean"}
-            </button>
+            <Show when={isRecording()}>
+              <button class="btn-cancel" onClick={() => recording.cancel()}>Cancel</button>
+            </Show>
+            <Show when={!isRecording()}>
+              <button
+                class="btn-clean"
+                onClick={handleCleanNote}
+                disabled={isCleaning() || !currentNote()?.body?.trim()}
+              >
+                {isCleaning() ? "..." : "Clean"}
+              </button>
+            </Show>
             <span class={`recording-dot${isRecording() ? " active" : ""}`} />
             <span class="mobile-status-text">{status()}</span>
           </div>
@@ -509,6 +514,7 @@ export default function App() {
             notes={notes()}
             onRecord={startRecording}
             onStop={stopRecording}
+            onCancel={() => recording.cancel()}
             onBack={handleBack}
             onDelete={handleDeleteNote}
             onClean={handleCleanNote}

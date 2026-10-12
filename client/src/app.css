@@ -38,6 +38,7 @@ body {
 #root {
   display: flex;
   height: 100vh;
+  height: 100dvh;
 }
 
 /* ── Buttons — typewriter keys ── */
@@ -354,6 +355,11 @@ button:disabled {
   padding: 3.5rem 2.5rem;
 }
 
+.note-view {
+  min-height: 0;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+}
+
 /* Keep the letterhead block from stretching across wide desktop screens */
 .welcome-view > * {
   width: 100%;
@@ -480,6 +486,7 @@ button:disabled {
   flex: 1;
   overflow-y: auto;
   padding: 2rem;
+  min-height: 0;
   box-sizing: border-box;
 }
 
@@ -870,6 +877,7 @@ button:disabled {
     top: 0;
     left: 0;
     height: 100vh;
+    height: 100dvh;
     z-index: 200;
     transform: translateX(-100%);
     transition: transform 0.25s ease;

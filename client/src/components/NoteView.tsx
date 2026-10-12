@@ -18,6 +18,7 @@ interface NoteViewProps {
   notes: NoteListItem[];
   onRecord: () => void;
   onStop: () => void;
+  onCancel: () => void;
   onBack: () => void;
   onDelete: () => void;
   onClean: () => void;
@@ -133,13 +134,18 @@ const NoteView: Component<NoteViewProps> = (props) => {
                 Record
               </button>
             </Show>
-            <button
-              class="btn-clean"
-              onClick={props.onClean}
-              disabled={props.isRecording || props.isCleaning || !props.note?.body?.trim()}
-            >
-              {props.isCleaning ? "Cleaning..." : "Clean up"}
-            </button>
+            <Show when={props.isRecording}>
+              <button class="btn-cancel" onClick={props.onCancel}>Cancel</button>
+            </Show>
+            <Show when={!props.isRecording}>
+              <button
+                class="btn-clean"
+                onClick={props.onClean}
+                disabled={props.isCleaning || !props.note?.body?.trim()}
+              >
+                {props.isCleaning ? "Cleaning..." : "Clean"}
+              </button>
+            </Show>
             <StatusBar status={props.status} isRecording={props.isRecording} />
           </div>
         </div>
